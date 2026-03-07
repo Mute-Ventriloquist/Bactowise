@@ -5,15 +5,15 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from genoflow.models.config import CondaEnvConfig, ToolConfig
-from genoflow.runners.base import BaseRunner
+from bactowise.models.config import CondaEnvConfig, ToolConfig
+from bactowise.runners.base import BaseRunner
 
 
 class CondaToolRunner(BaseRunner):
     """
     Runs tools installed via conda (e.g. Prokka, Samtools, GATK).
 
-    If conda_env is specified in the config, genoflow will:
+    If conda_env is specified in the config, bactowise will:
       1. Check if the named environment already exists
       2. Create it automatically if it doesn't, installing the tool and
          any extra dependencies declared in the config

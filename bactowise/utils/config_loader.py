@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from genoflow.models.config import PipelineConfig
+from bactowise.models.config import PipelineConfig
 
 
 def load_config(config_path: Path) -> PipelineConfig:

@@ -19,7 +19,7 @@ class DatabaseConfig(BaseModel):
 class CondaEnvConfig(BaseModel):
     """
     Describes a dedicated conda environment for a tool.
-    Genoflow creates this environment automatically if it doesn't exist,
+    BactoWise creates this environment automatically if it doesn't exist,
     then runs the tool inside it via 'conda run -n <name>' which handles
     all library path setup correctly.
 
@@ -41,13 +41,29 @@ class CondaEnvConfig(BaseModel):
     dependencies: list[str] = []
 
 
+class QcCriteria(BaseModel):
+    """
+    Pass/fail thresholds for QC tools.
+    If the tool output does not meet these criteria, BactoWise will warn
+    and continue — the scientist makes the final call, not the software.
+
+    completeness  : minimum % genome completeness (default 95)
+    contamination : maximum % contamination       (default 5)
+    """
+    completeness: float = 95.0
+    contamination: float = 5.0
+
+
 class ToolConfig(BaseModel):
     name: str
     version: str
     runtime: Literal["conda", "docker"]
+    role: Literal["qc", "annotation"] = "annotation"
     image: Optional[str] = None
     database: Optional[DatabaseConfig] = None
     conda_env: Optional[CondaEnvConfig] = None
+    qc_criteria: Optional[QcCriteria] = None
+    depends_on: list[str] = []
     params: dict = {}
 
     @model_validator(mode="after")
@@ -59,6 +75,12 @@ class ToolConfig(BaseModel):
             raise ValueError(
                 f"'conda_env' is only valid for runtime: conda, "
                 f"but tool '{self.name}' has runtime: {self.runtime}"
+            )
+
+        if self.qc_criteria and self.role != "qc":
+            raise ValueError(
+                f"'qc_criteria' is only valid for role: qc, "
+                f"but tool '{self.name}' has role: {self.role}"
             )
         return self
 
@@ -79,3 +101,16 @@ class PipelineConfig(BaseModel):
         if not v:
             raise ValueError("At least one tool must be specified in config.")
         return v
+
+    @field_validator("tools")
+    @classmethod
+    def validate_depends_on(cls, tools):
+        tool_names = {t.name for t in tools}
+        for tool in tools:
+            for dep in tool.depends_on:
+                if dep not in tool_names:
+                    raise ValueError(
+                        f"Tool '{tool.name}' depends_on '{dep}' "
+                        f"but '{dep}' is not defined in the tools list."
+                    )
+        return tools

@@ -1,5 +1,5 @@
 """
-Tests for genoflow.
+Tests for bactowise.
 These tests validate orchestration logic — config parsing, validation,
 runner creation, and pipeline wiring — without needing real tools installed.
 """
@@ -12,9 +12,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from genoflow.models.config import DatabaseConfig, PipelineConfig, ToolConfig
-from genoflow.runners.factory import RunnerFactory
-from genoflow.utils.config_loader import load_config
+from bactowise.models.config import DatabaseConfig, PipelineConfig, ToolConfig
+from bactowise.runners.factory import RunnerFactory
+from bactowise.utils.config_loader import load_config
 
 
 # ─── Config model tests ───────────────────────────────────────────────────────
@@ -116,13 +116,13 @@ class TestConfigLoader:
 
 class TestRunnerFactory:
     def test_conda_runtime_returns_conda_runner(self, tmp_path):
-        from genoflow.runners.conda_runner import CondaToolRunner
+        from bactowise.runners.conda_runner import CondaToolRunner
         tool = ToolConfig(name="prokka", version="1.14.6", runtime="conda")
         runner = RunnerFactory.create(tool, tmp_path)
         assert isinstance(runner, CondaToolRunner)
 
     def test_docker_runtime_returns_docker_runner(self, tmp_path):
-        from genoflow.runners.docker_runner import DockerToolRunner
+        from bactowise.runners.docker_runner import DockerToolRunner
         tool = ToolConfig(
             name="bakta", version="1.9.3", runtime="docker",
             image="oschwengers/bakta:1.9.3"
@@ -151,7 +151,7 @@ class TestRunnerFactory:
 
 class TestVersionWarning:
     def test_version_mismatch_warns_not_raises(self, tmp_path, capsys):
-        from genoflow.runners.conda_runner import CondaToolRunner
+        from bactowise.runners.conda_runner import CondaToolRunner
         tool = ToolConfig(name="prokka", version="1.14.6", runtime="conda")
         runner = CondaToolRunner(tool, tmp_path)
         runner._check_version("1.14.5")         # different version

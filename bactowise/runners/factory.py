@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from genoflow.models.config import ToolConfig
-from genoflow.runners.base import BaseRunner
-from genoflow.runners.conda_runner import CondaToolRunner
-from genoflow.runners.docker_runner import DockerToolRunner
+from bactowise.models.config import ToolConfig
+from bactowise.runners.base import BaseRunner
+from bactowise.runners.checkm_runner import CheckMRunner
+from bactowise.runners.conda_runner import CondaToolRunner
+from bactowise.runners.docker_runner import DockerToolRunner
 
 
 class RunnerFactory:
@@ -16,6 +17,10 @@ class RunnerFactory:
 
     @staticmethod
     def create(tool_config: ToolConfig, output_dir: Path) -> BaseRunner:
+        # QC tools get their own specialised runner regardless of runtime
+        if tool_config.name == "checkm":
+            return CheckMRunner(tool_config, output_dir)
+
         if tool_config.runtime == "conda":
             return CondaToolRunner(tool_config, output_dir)
         elif tool_config.runtime == "docker":

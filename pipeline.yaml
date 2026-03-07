@@ -1,77 +1,75 @@
 # pipeline.yaml
-# Annotate M. genitalium G37 with Prokka and Bakta simultaneously.
+# Annotate M. genitalium G37 with Prokka and Bakta simultaneously,
+# preceded by a CheckM genome quality assessment.
 #
 # Before running:
-#   Download the Bakta light database (one-time, ~2 GB):
-#     bakta_db download --output ~/bakta_db --type light
+#   1. Download the Bakta light database (one-time, ~2 GB):
+#        bakta_db download --output ~/bakta_db --type light
+#   2. Download the CheckM database (one-time, ~2 GB) — see README step 4.
 #
-# Everything else (conda env creation, Docker image pulling) happens
-# automatically on first run.
+# Everything else (conda env creation, Docker image pulling, checkm data setRoot)
+# happens automatically on first run.
 #
 # Usage:
-#   genoflow -f mgenitalium_G37.fasta -c pipeline.yaml
+#   bactowise run -f mgenitalium_G37.fasta -c pipeline.yaml
 
 tools:
+
+  - name: checkm
+    version: "1.2.3"
+    runtime: conda
+    role: qc
+    conda_env:
+      name: "checkm_env"
+      channels:
+        - bioconda
+        - conda-forge
+      dependencies:
+        - python=3.8
+    database:
+      path: "/home/venkateswaran/projects/BactoWise/test_data/checkm_db"             # REQUIRED — path to your CheckM database directory
+    qc_criteria:
+      completeness: 95.0              # optional — default 95.0
+      contamination: 5.0              # optional — default 5.0
+    params:
+      # All params below are optional — CheckM runs fine without them
+      mode: taxonomy_wf               # optional — default: taxonomy_wf
+      rank: domain                    # optional — default: domain
+      taxon: Bacteria                 # optional — default: Bacteria
+      threads: 4                      # optional — default: 1
 
   - name: prokka
     version: "1.14.6"
     runtime: conda
+    depends_on: [checkm]
     conda_env:
       name: "prokka_env"
       channels:
         - bioconda
         - conda-forge
       dependencies:
-        - python=3.8      # prokka needs python 3.8 to resolve its Perl deps cleanly
+        - python=3.8
     params:
-      genus: "Mycoplasma"
-      species: "genitalium"
-      kingdom: Bacteria
-      cpus: 4
+      # All params below are optional — Prokka runs with its general bacterial
+      # database if genus/species are omitted, but annotation quality is better
+      # when they are specified for known organisms
+      genus: "Mycoplasma"             # optional — improves gene naming
+      species: "genitalium"           # optional — improves gene naming
+      kingdom: Bacteria               # optional — default: Bacteria
+      cpus: 4                         # optional — default: 1
 
   - name: bakta
     version: "1.12.0"
     runtime: docker
-    image: "oschwengers/bakta:v1.12.0"   # pulled automatically on first run
+    depends_on: [checkm]
+    image: "oschwengers/bakta:v1.12.0"
     database:
-      path: "/home/venkateswaran/projects/genoflow/test_data/db-light"
+      path: "/home/venkateswaran/projects/BactoWise/test_data/db-light"              # REQUIRED — download with: bakta_db download --output ~/bakta_db --type light
       type: light
     params:
-      min-contig-length: 200
-      threads: 4
+      # All params below are optional — Bakta runs fine without them
+      min-contig-length: 200          # optional — default: 1
+      threads: 4                      # optional — default: 1
 
 output_dir: "./results"
 threads: 4
-
-# ─── Reference examples for other common tools ────────────────────────────────
-#
-# Samtools (C-based, no extra dependencies needed):
-#   - name: samtools
-#     version: "1.19"
-#     runtime: conda
-#     conda_env:
-#       name: "samtools_env"
-#       channels: [bioconda, conda-forge]
-#     params: {}
-#
-# GATK (Java-based, needs a specific JDK):
-#   - name: gatk
-#     version: "4.5.0"
-#     runtime: conda
-#     conda_env:
-#       name: "gatk_env"
-#       channels: [bioconda, conda-forge]
-#       dependencies:
-#         - openjdk=11
-#     params: {}
-#
-# tRNAscan-SE (Perl-based):
-#   - name: trnascan-se
-#     version: "2.0.12"
-#     runtime: conda
-#     conda_env:
-#       name: "trnascan_env"
-#       channels: [bioconda, conda-forge]
-#       dependencies:
-#         - perl=5.32
-#     params: {}

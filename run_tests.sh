@@ -8,7 +8,7 @@
 #
 # What it checks:
 #   - Python imports all load correctly
-#   - CLI entry point (genoflow) is available
+#   - CLI entry point (bactowise) is available
 #   - Config validation command works
 #   - All unit tests pass (mocks Docker + tools, no real installs needed)
 
@@ -45,7 +45,7 @@ fi
 
 echo ""
 echo "════════════════════════════════════════════"
-echo "  Genoflow — Test Suite"
+echo "  BactoWise — Test Suite"
 echo "  Python: $($PYTHON --version)"
 echo "  Dir:    $SCRIPT_DIR"
 echo "════════════════════════════════════════════"
@@ -67,14 +67,14 @@ done
 header "2/4  Package Import Check"
 
 imports=(
-    "genoflow"
-    "genoflow.pipeline"
-    "genoflow.models.config"
-    "genoflow.utils.config_loader"
-    "genoflow.runners.factory"
-    "genoflow.runners.conda_runner"
-    "genoflow.runners.docker_runner"
-    "genoflow.cli"
+    "bactowise"
+    "bactowise.pipeline"
+    "bactowise.models.config"
+    "bactowise.utils.config_loader"
+    "bactowise.runners.factory"
+    "bactowise.runners.conda_runner"
+    "bactowise.runners.docker_runner"
+    "bactowise.cli"
 )
 
 for mod in "${imports[@]}"; do
@@ -92,8 +92,8 @@ header "3/4  CLI Check"
 # Write a minimal test config that has NO database paths.
 # This avoids the chicken-and-egg problem: the database only exists after
 # the package is installed and the user runs bakta_db download.
-# Database path checks are intentionally deferred to runtime (genoflow run).
-TEST_CONFIG=$(mktemp /tmp/genoflow_test_XXXXXX.yaml)
+# Database path checks are intentionally deferred to runtime (bactowise run).
+TEST_CONFIG=$(mktemp /tmp/bactowise_test_XXXXXX.yaml)
 cat > "$TEST_CONFIG" << 'YAML'
 tools:
   - name: prokka
@@ -107,29 +107,29 @@ tools:
     runtime: docker
     image: "oschwengers/bakta:1.9.3"
     params: {}
-output_dir: "/tmp/genoflow_test_output"
+output_dir: "/tmp/bactowise_test_output"
 threads: 4
 YAML
 
-if command -v genoflow &>/dev/null; then
-    if genoflow --help &>/dev/null; then
-        ok "genoflow --help works"
+if command -v bactowise &>/dev/null; then
+    if bactowise --help &>/dev/null; then
+        ok "bactowise --help works"
     else
-        fail "genoflow --help failed"
+        fail "bactowise --help failed"
     fi
 
-    if genoflow validate -c "$TEST_CONFIG" &>/dev/null; then
-        ok "genoflow validate works (no database path required at build time)"
+    if bactowise validate -c "$TEST_CONFIG" &>/dev/null; then
+        ok "bactowise validate works (no database path required at build time)"
     else
-        fail "genoflow validate failed on minimal test config"
+        fail "bactowise validate failed on minimal test config"
     fi
 else
     # CLI not on PATH — fall back to running as a Python module
     # This happens in some conda build environments before entry points are linked
-    if PYTHONPATH="$SCRIPT_DIR" $PYTHON -m genoflow.cli --help &>/dev/null; then
-        ok "genoflow CLI works (via python -m)"
+    if PYTHONPATH="$SCRIPT_DIR" $PYTHON -m bactowise.cli --help &>/dev/null; then
+        ok "bactowise CLI works (via python -m)"
     else
-        fail "genoflow CLI not found on PATH and python -m fallback also failed"
+        fail "bactowise CLI not found on PATH and python -m fallback also failed"
     fi
 fi
 

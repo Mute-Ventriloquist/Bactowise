@@ -4,7 +4,7 @@ import abc
 import shutil
 from pathlib import Path
 
-from genoflow.models.config import ToolConfig
+from bactowise.models.config import ToolConfig
 
 
 class BaseRunner(abc.ABC):

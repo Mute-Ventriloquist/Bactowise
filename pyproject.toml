@@ -1,25 +1,23 @@
 # pyproject.toml
 #
-# This file is NOT for distributing genoflow via pip.
+# This file is NOT for distributing bactowise via pip.
 # It exists solely so that "pip install . --no-deps" works during conda build.
-# Users install genoflow via conda, not pip.
+# Users install bactowise via conda, not pip.
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "genoflow"
+name = "bactowise"
 version = "0.1.0"
 requires-python = ">=3.10"
 
 # No dependencies listed here — conda handles all dependencies via meta.yaml.
-# Listing them here would cause pip to try downloading them from PyPI during
-# conda build, which is wrong. conda build passes --no-deps for this reason.
 dependencies = []
 
 [project.scripts]
-genoflow = "genoflow.cli:main"
+bactowise = "bactowise.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["genoflow"]
+packages = ["bactowise"]

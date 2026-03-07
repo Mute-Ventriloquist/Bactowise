@@ -3,8 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from genoflow.models.config import ToolConfig
-from genoflow.runners.base import BaseRunner
+from bactowise.models.config import ToolConfig
+from bactowise.runners.base import BaseRunner
 
 
 class DockerToolRunner(BaseRunner):
@@ -22,7 +22,7 @@ class DockerToolRunner(BaseRunner):
         try:
             import docker
             client = docker.from_env()
-            client.ping()           # actually test the connection
+            client.ping()
             return client
         except ImportError:
             raise RuntimeError(
@@ -38,7 +38,10 @@ class DockerToolRunner(BaseRunner):
     def preflight(self) -> None:
         print(f"\n[preflight] Checking docker tool: {self.config.name}")
 
-        # 1. Check database path exists if tool requires one
+        # Validate tool-specific required fields
+        self._validate_required_fields()
+
+        # Check database path exists if provided
         if self.config.database:
             db_path = self.config.database.path
             if not db_path.exists():
@@ -49,19 +52,37 @@ class DockerToolRunner(BaseRunner):
                 )
             print(f"  ✓  Database found at: {db_path}")
 
-        # 2. Pull image if not already present, warn on version mismatch
+        # Pull image if not already present
         image_ref = self.config.image
         print(f"  Checking Docker image: {image_ref}")
         self._ensure_image(image_ref)
 
+    def _validate_required_fields(self) -> None:
+        """
+        Check that all fields truly required by this tool are present.
+        Only raises errors for things that will definitely cause the tool to fail.
+        Optional fields that have sensible defaults are never required here.
+        """
+        if self.config.name == "bakta":
+            if not self.config.database:
+                raise RuntimeError(
+                    f"  ✗  Bakta requires a database path.\n"
+                    f"     Add to pipeline.yaml:\n"
+                    f"       database:\n"
+                    f"         path: ~/bakta_db\n"
+                    f"         type: light\n"
+                    f"     Then download: bakta_db download --output ~/bakta_db --type light"
+                )
+
     def _ensure_image(self, image_ref: str) -> None:
-        """Pull the image if it's not already present locally."""
         import docker
         try:
             image = self.client.images.get(image_ref)
-            # try to extract a version label for the version check
             labels = image.labels or {}
-            installed_version = labels.get("version", labels.get("org.opencontainers.image.version", "unknown"))
+            installed_version = labels.get(
+                "version",
+                labels.get("org.opencontainers.image.version", "unknown")
+            )
             if installed_version != "unknown":
                 self._check_version(installed_version)
             else:
@@ -71,8 +92,6 @@ class DockerToolRunner(BaseRunner):
             self._pull_image(image_ref)
 
     def _pull_image(self, image_ref: str) -> None:
-        """Pull image with a simple progress indicator."""
-        # split name and tag
         if ":" in image_ref:
             repo, tag = image_ref.rsplit(":", 1)
         else:
@@ -82,7 +101,6 @@ class DockerToolRunner(BaseRunner):
         for line in self.client.api.pull(repo, tag=tag, stream=True, decode=True):
             layer_id = line.get("id", "")
             status = line.get("status", "")
-            # only print each layer's first status line to avoid wall of text
             if layer_id and layer_id not in seen_layers:
                 seen_layers.add(layer_id)
                 print(f"  [{layer_id}] {status}")
@@ -92,7 +110,6 @@ class DockerToolRunner(BaseRunner):
         print(f"  ✓  Image {image_ref} pulled successfully.")
 
     def run(self, fasta: Path) -> Path:
-        """Mount volumes and run the Docker container."""
         print(f"\n[{self.config.name}] Starting annotation inside Docker...")
 
         volumes = self._build_volumes(fasta)
@@ -108,12 +125,11 @@ class DockerToolRunner(BaseRunner):
                 self.config.image,
                 command=cmd,
                 volumes=volumes,
-                remove=True,            # delete container after it exits
-                detach=False,           # wait for completion
+                remove=True,
+                detach=False,
                 stdout=True,
                 stderr=True,
             )
-            # container output is bytes when detach=False
             output = container if isinstance(container, bytes) else b""
             log.write(output.decode("utf-8", errors="replace"))
 
@@ -121,12 +137,8 @@ class DockerToolRunner(BaseRunner):
         return self.output_dir
 
     def _build_volumes(self, fasta: Path) -> dict:
-        """
-        Map host paths → container paths.
-        Standard convention: /input, /output, /db inside every container.
-        """
         volumes = {
-            str(fasta.parent.resolve()): {"bind": "/input",  "mode": "ro"},
+            str(fasta.parent.resolve()): {"bind": "/input", "mode": "ro"},
             str(self.output_dir.resolve()): {"bind": "/output", "mode": "rw"},
         }
         if self.config.database:
@@ -134,25 +146,21 @@ class DockerToolRunner(BaseRunner):
         return volumes
 
     def _build_command(self, fasta: Path) -> str:
-        """Build the container command string for this specific tool."""
         if self.config.name == "bakta":
             return self._bakta_command(fasta)
         if self.config.name == "pgap":
             return self._pgap_command(fasta)
-
-        # generic fallback
         return f"--input /input/{fasta.name} --output /output"
 
     def _bakta_command(self, fasta: Path) -> str:
-        # The Bakta image uses bakta itself as the entrypoint, so we pass
-        # arguments directly — no 'bakta' prefix. Genome is positional and must come first.
+        # Entrypoint is bakta itself — pass args only, genome first (required positional)
+        # --db and --output are always included as they map to the mounted volumes
         cmd = f"/input/{fasta.name} --db /db --output /output --force"
         for key, val in self.config.params.items():
             cmd += f" --{key} {val}"
         return cmd
 
     def _pgap_command(self, fasta: Path) -> str:
-        # PGAP has a different invocation — placeholder for when you swap in PGAP later
         cmd = (
             f"--fasta /input/{fasta.name} "
             f"--output /output "
