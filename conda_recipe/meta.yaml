@@ -1,0 +1,46 @@
+{% set version = "0.1.0" %}
+
+package:
+  name: genoflow
+  version: {{ version }}
+
+source:
+  path: ..
+
+build:
+  number: 0
+  script: pip install . --no-deps -vv
+  entry_points:
+    - genoflow = genoflow.cli:main
+
+requirements:
+  host:
+    - python >=3.10,<3.13    # pin explicitly — avoid bleeding-edge Python versions
+    - pip
+    - hatchling
+
+  run:
+    - python >=3.10,<3.13
+    - pydantic >=2.0
+    - typer >=0.9
+    - pyyaml >=6.0
+    - docker-py               # correct conda package name for the Docker Python SDK
+
+    # Bakta is declared here so it is available on PATH for bakta_db download.
+    # It is also run via Docker image for the actual annotation.
+    - bioconda::bakta
+
+    # Prokka is NOT listed here — it lives in its own dedicated conda environment
+    # (prokka_env) to avoid dependency conflicts with modern Python/Perl stacks.
+    # See pipeline.yaml and README for setup instructions.
+
+test:
+  script: run_tests.sh
+  requires:
+    - pytest
+
+extra:
+  channels:
+    - bioconda
+    - conda-forge
+    - defaults
