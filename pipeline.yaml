@@ -2,13 +2,19 @@
 # Annotate M. genitalium G37 with Prokka and Bakta simultaneously,
 # preceded by a CheckM genome quality assessment.
 #
-# Before running:
-#   1. Download the Bakta light database (one-time, ~2 GB):
-#        bakta_db download --output ~/bakta_db --type light
-#   2. Download the CheckM database (one-time, ~2 GB) — see README step 4.
+# FIRST-TIME SETUP
+# ----------------
+# 1. Download all required databases (one-time, ~4 GB total):
+#      bactowise db download
 #
-# Everything else (conda env creation, Docker image pulling, checkm data setRoot)
-# happens automatically on first run.
+#    This stores databases under ~/.bactowise/databases/ and the default
+#    paths below will work without any edits.
+#
+#    To force a re-download (e.g. to update the database):
+#      bactowise db download --force-db-download
+#
+# 2. Everything else (conda env creation, Docker image pulling, checkm
+#    data setRoot) happens automatically on first run.
 #
 # Usage:
 #   bactowise run -f mgenitalium_G37.fasta -c pipeline.yaml
@@ -27,7 +33,7 @@ tools:
       dependencies:
         - python=3.8
     database:
-      path: "/home/venkateswaran/projects/BactoWise/test_data/checkm_db"             # REQUIRED — path to your CheckM database directory
+      path: "~/.bactowise/databases/checkm"   # populated by: bactowise db download
     qc_criteria:
       completeness: 95.0              # optional — default 95.0
       contamination: 5.0              # optional — default 5.0
@@ -50,9 +56,7 @@ tools:
       dependencies:
         - python=3.8
     params:
-      # All params below are optional — Prokka runs with its general bacterial
-      # database if genus/species are omitted, but annotation quality is better
-      # when they are specified for known organisms
+      # All params below are optional
       genus: "Mycoplasma"             # optional — improves gene naming
       species: "genitalium"           # optional — improves gene naming
       kingdom: Bacteria               # optional — default: Bacteria
@@ -64,10 +68,10 @@ tools:
     depends_on: [checkm]
     image: "oschwengers/bakta:v1.12.0"
     database:
-      path: "/home/venkateswaran/projects/BactoWise/test_data/db-light"              # REQUIRED — download with: bakta_db download --output ~/bakta_db --type light
+      path: "~/.bactowise/databases/bakta/db-light"  # populated by: bactowise db download
       type: light
     params:
-      # All params below are optional — Bakta runs fine without them
+      # All params below are optional
       min-contig-length: 200          # optional — default: 1
       threads: 4                      # optional — default: 1
 

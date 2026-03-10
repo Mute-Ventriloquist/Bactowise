@@ -222,3 +222,95 @@ class TestCondaEnvField:
         # Tools without conda_env rely on the binary being on PATH
         tool = ToolConfig(name="prokka", version="1.14.6", runtime="conda")
         assert tool.conda_env is None
+
+
+# ─── Pipeline skip tests ──────────────────────────────────────────────────────
+
+class TestPipelineSkip:
+    """
+    Tests for the --skip / Pipeline(skip=...) feature.
+    All tests mock runners so no real tools are needed.
+    """
+
+    def _make_config(self, tmp_path) -> "PipelineConfig":
+        """Three-tool config: checkm → prokka + bakta (mirrors the real pipeline)."""
+        return PipelineConfig(**{
+            "tools": [
+                {
+                    "name": "checkm",
+                    "version": "1.2.3",
+                    "runtime": "conda",
+                    "role": "qc",
+                },
+                {
+                    "name": "prokka",
+                    "version": "1.14.6",
+                    "runtime": "conda",
+                    "depends_on": ["checkm"],
+                },
+                {
+                    "name": "bakta",
+                    "version": "1.9.3",
+                    "runtime": "docker",
+                    "image": "oschwengers/bakta:1.9.3",
+                    "depends_on": ["checkm"],
+                },
+            ],
+            "output_dir": str(tmp_path),
+        })
+
+    def test_skip_unknown_tool_raises(self, tmp_path):
+        config = self._make_config(tmp_path)
+        with pytest.raises(ValueError, match="Unknown tool"):
+            Pipeline(config, skip={"nonexistent_tool"})
+
+    def test_skip_removes_tool_from_runners(self, tmp_path):
+        config = self._make_config(tmp_path)
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, skip={"checkm"})
+        assert "checkm" not in pipeline.runners
+        assert "prokka" in pipeline.runners
+        assert "bakta" in pipeline.runners
+
+    def test_skip_all_annotation_tools(self, tmp_path):
+        config = self._make_config(tmp_path)
+        pipeline = Pipeline(config, skip={"prokka", "bakta"})
+        assert "prokka" not in pipeline.runners
+        assert "bakta"  not in pipeline.runners
+        assert "checkm" in pipeline.runners
+
+    def test_skip_unblocks_dependents(self, tmp_path):
+        """
+        Skipping checkm should place prokka and bakta in stage 0
+        (treated as if their dependency is already satisfied).
+        """
+        config = self._make_config(tmp_path)
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, skip={"checkm"})
+
+        stages = pipeline._build_stages()
+        # All remaining tools should land in one stage with no ordering issue
+        all_staged = [tool for stage in stages for tool in stage]
+        assert "prokka" in all_staged
+        assert "bakta"  in all_staged
+        assert "checkm" not in all_staged
+
+    def test_no_skip_preserves_normal_stages(self, tmp_path):
+        """Without skips the stage order should be checkm first, then prokka+bakta."""
+        config = self._make_config(tmp_path)
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, skip=set())
+
+        stages = pipeline._build_stages()
+        assert stages[0] == ["checkm"]
+        assert set(stages[1]) == {"prokka", "bakta"}
+
+    def test_skip_empty_set_is_a_noop(self, tmp_path):
+        config = self._make_config(tmp_path)
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, skip=set())
+        assert set(pipeline.runners.keys()) == {"checkm", "prokka", "bakta"}

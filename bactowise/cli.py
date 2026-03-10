@@ -6,6 +6,13 @@ import typer
 
 from bactowise.pipeline import Pipeline
 from bactowise.utils.config_loader import load_config
+from bactowise.utils.db_manager import (
+    DEFAULT_DB_ROOT,
+    download_bakta,
+    download_checkm,
+    is_bakta_present,
+    is_checkm_present,
+)
 
 app = typer.Typer(
     name="bactowise",
@@ -20,10 +27,13 @@ only after QC completes. All tools are configured via a YAML config file.
 \b
 QUICK START
 -----------
-Step 1 — Validate your config file:
+Step 1 — Download databases (one-time setup):
+    bactowise db download
+
+Step 2 — Validate your config file:
     bactowise validate -c pipeline.yaml
 
-Step 2 — Run the pipeline on a genome:
+Step 3 — Run the pipeline on a genome:
     bactowise run -f genome.fasta -c pipeline.yaml
 
 \b
@@ -43,28 +53,21 @@ FIRST TIME SETUP
 ----------------
 Before running, make sure you have:
 
-  1. Docker running (for Docker-based tools like Bakta):
+  1. Databases downloaded (stored in ~/.bactowise/databases/):
+       bactowise db download
+
+  2. Docker running (for Docker-based tools like Bakta):
        Linux:   sudo systemctl start docker
        Mac/Win: Open Docker Desktop
 
-  2. Bakta database downloaded (~2 GB, one-time):
-       bakta_db download --output ~/bakta_db --type light
-
-  3. CheckM database downloaded (~2 GB, one-time):
-       mkdir -p ~/checkm_db && cd ~/checkm_db
-       wget https://data.ace.uq.edu.au/public/CheckM_databases/checkm_data_2015_01_16.tar.gz
-       tar -xzf checkm_data_2015_01_16.tar.gz
-     Then set database.path in pipeline.yaml — BactoWise configures
-     CheckM automatically via checkm data setRoot on every preflight.
-
-  4. A genome file in .fasta or .fna format.
+  3. A genome file in .fasta or .fna format.
      Download the M. genitalium test genome:
        efetch -db nucleotide -id NC_000908.2 -format fasta > mgenitalium.fasta
 
 \b
 CONDA TOOLS (CheckM, Prokka)
 -----------------------------
-Tools with a 'conda_env' block in pipeline.yaml will have their
+Tools with a conda_env block in pipeline.yaml will have their
 conda environment created automatically on first run. No manual
 setup needed.
 
@@ -84,6 +87,119 @@ Results are written to separate subfolders under output_dir:
     add_completion=False,
 )
 
+# ── db sub-command group ──────────────────────────────────────────────────────
+
+db_app = typer.Typer(
+    name="db",
+    help="Manage BactoWise databases (download, status).",
+    add_completion=False,
+)
+app.add_typer(db_app, name="db")
+
+
+@db_app.command("download")
+def db_download(
+    checkm: bool = typer.Option(
+        False, "--checkm",
+        help="Download the CheckM database only.",
+    ),
+    bakta: bool = typer.Option(
+        False, "--bakta",
+        help="Download the Bakta database only.",
+    ),
+    force: bool = typer.Option(
+        False, "--force-db-download",
+        help=(
+            "Re-download databases even if they are already present. "
+            "The existing database directory will be deleted and replaced."
+        ),
+    ),
+):
+    """
+    Download the databases required by BactoWise.
+
+    \b
+    By default, downloads both databases:
+      ~/.bactowise/databases/checkm/   — CheckM marker gene database (~2 GB)
+      ~/.bactowise/databases/bakta/    — Bakta annotation database, light (~2 GB)
+
+    \b
+    If a database is already present it is skipped unless --force-db-download
+    is given. The presence check looks for key marker files inside each database
+    directory, so an interrupted previous download is detected and re-run.
+
+    \b
+    Examples:
+      bactowise db download
+      bactowise db download --checkm
+      bactowise db download --bakta
+      bactowise db download --force-db-download
+      bactowise db download --checkm --force-db-download
+    """
+    download_checkm_flag = checkm or (not checkm and not bakta)
+    download_bakta_flag  = bakta  or (not checkm and not bakta)
+
+    typer.echo(f"\nBactoWise — Database Download")
+    typer.echo(f"  Storage root : {DEFAULT_DB_ROOT}")
+    typer.echo(f"  Mode         : {'force re-download' if force else 'skip if already present'}\n")
+
+    errors = []
+
+    if download_checkm_flag:
+        try:
+            download_checkm(force=force)
+        except RuntimeError as e:
+            typer.echo(f"\n✗ CheckM download failed: {e}", err=True)
+            errors.append("checkm")
+
+    if download_bakta_flag:
+        try:
+            download_bakta(force=force)
+        except RuntimeError as e:
+            typer.echo(f"\n✗ Bakta download failed: {e}", err=True)
+            errors.append("bakta")
+
+    if errors:
+        typer.echo(
+            f"\n✗ {len(errors)} database(s) failed: {', '.join(errors)}\n",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    typer.echo("\n✓ All requested databases are ready.")
+    typer.echo("\nYou can now run the pipeline:")
+    typer.echo("  bactowise run -f <genome.fasta> -c pipeline.yaml\n")
+
+
+@db_app.command("status")
+def db_status():
+    """
+    Show whether the required databases have been downloaded.
+
+    \b
+    Checks for marker files inside each database directory to confirm
+    a complete (not just partial) download.
+
+    \b
+    Example:
+      bactowise db status
+    """
+    typer.echo(f"\nBactoWise — Database Status")
+    typer.echo(f"  Storage root: {DEFAULT_DB_ROOT}\n")
+
+    checkm_ok = is_checkm_present()
+    bakta_ok  = is_bakta_present()
+
+    typer.echo(f"  {'✓' if checkm_ok else '✗'}  CheckM  → {DEFAULT_DB_ROOT / 'checkm'}")
+    typer.echo(f"  {'✓' if bakta_ok  else '✗'}  Bakta   → {DEFAULT_DB_ROOT / 'bakta'}")
+
+    if not checkm_ok or not bakta_ok:
+        typer.echo(f"\n  Run 'bactowise db download' to fetch missing databases.\n")
+    else:
+        typer.echo(f"\n  All databases present.\n")
+
+
+# ── run command ───────────────────────────────────────────────────────────────
 
 @app.command()
 def run(
@@ -99,42 +215,56 @@ def run(
     config: Path = typer.Option(
         ..., "-c", "--config",
         help=(
-            "Path to the pipeline config YAML file that defines which tools "
-            "to run, their versions, parameters, and dependencies. "
+            "Path to the pipeline config YAML file. "
             "Example: -c pipeline.yaml"
         ),
         exists=True,
         readable=True,
+    ),
+    skip: list[str] = typer.Option(
+        [],
+        "--skip",
+        help=(
+            "Skip a tool by name. Can be repeated to skip multiple tools. "
+            "Skipped tools are excluded from preflight and execution. "
+            "Downstream tools that depend on a skipped tool still run, "
+            "but a warning is printed if a QC tool is skipped. "
+            "Example: --skip checkm   or   --skip prokka --skip bakta"
+        ),
     ),
 ):
     """
     Run the QC and annotation pipeline on a genome.
 
     \b
-    Executes tools in dependency order as defined by 'depends_on' in the
+    Executes tools in dependency order as defined by depends_on in the
     config. Within each stage, tools run simultaneously. For example:
 
       Stage 1: checkm             (QC gate — runs alone first)
       Stage 2: prokka + bakta     (annotation — run in parallel after checkm)
 
     \b
-    On first run, bactowise will automatically:
-      - Create any missing conda environments (e.g. checkm_env, prokka_env)
-      - Pull any missing Docker images (e.g. oschwengers/bakta)
+    Use --skip to exclude one or more tools from this run without editing
+    the config file. Downstream tools that depend on a skipped tool are
+    automatically unblocked and still run. If a QC tool is skipped, a
+    warning is printed before annotation begins.
 
     \b
     Examples:
       bactowise run -f mgenitalium.fasta -c pipeline.yaml
-      bactowise run -f /data/genome.fna -c /configs/my_pipeline.yaml
+      bactowise run -f genome.fna -c pipeline.yaml --skip checkm
+      bactowise run -f genome.fna -c pipeline.yaml --skip prokka --skip bakta
     """
     typer.echo(f"\nBactoWise — Bacterial Genome QC & Annotation Pipeline")
     typer.echo(f"  Genome : {fasta}")
     typer.echo(f"  Config : {config}")
+    if skip:
+        typer.echo(f"  Skip   : {', '.join(skip)}")
     typer.echo(f"  Tip    : Run 'bactowise validate -c {config}' first to check your config.\n")
 
     try:
         pipeline_config = load_config(config)
-        pipeline = Pipeline(pipeline_config)
+        pipeline = Pipeline(pipeline_config, skip=set(skip))
         pipeline.run(fasta)
     except (FileNotFoundError, ValueError) as e:
         typer.echo(f"\n✗ Error: {e}", err=True)
@@ -144,14 +274,13 @@ def run(
         raise typer.Exit(code=1)
 
 
+# ── validate command ──────────────────────────────────────────────────────────
+
 @app.command()
 def validate(
     config: Path = typer.Option(
         ..., "-c", "--config",
-        help=(
-            "Path to the pipeline config YAML file to validate. "
-            "Example: -c pipeline.yaml"
-        ),
+        help="Path to the pipeline config YAML file to validate.",
         exists=True,
     ),
 ):
@@ -159,9 +288,8 @@ def validate(
     Validate a config file without running anything.
 
     \b
-    Checks that your pipeline.yaml is correctly structured — all required
-    fields are present, runtimes are valid, depends_on references are valid,
-    and tool configs are well-formed.
+    Checks that pipeline.yaml is correctly structured — required fields,
+    valid runtimes, valid depends_on references, and well-formed tool configs.
 
     \b
     Does NOT check:
@@ -171,11 +299,7 @@ def validate(
     These are checked at runtime when you run 'bactowise run'.
 
     \b
-    Run this first whenever you edit pipeline.yaml to catch typos
-    and config errors before starting a long annotation job.
-
-    \b
-    Examples:
+    Example:
       bactowise validate -c pipeline.yaml
     """
     try:

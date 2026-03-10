@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from bactowise.models.config import ToolConfig
@@ -38,40 +37,31 @@ class DockerToolRunner(BaseRunner):
     def preflight(self) -> None:
         print(f"\n[preflight] Checking docker tool: {self.config.name}")
 
-        # Validate tool-specific required fields
         self._validate_required_fields()
 
-        # Check database path exists if provided
         if self.config.database:
             db_path = self.config.database.path
             if not db_path.exists():
                 raise RuntimeError(
                     f"  ✗  Database for {self.config.name} not found at: {db_path}\n"
-                    f"     For Bakta, run:\n"
-                    f"     bakta_db download --output {db_path} --type {self.config.database.type}"
+                    f"     Run: bactowise db download --bakta"
                 )
             print(f"  ✓  Database found at: {db_path}")
 
-        # Pull image if not already present
         image_ref = self.config.image
         print(f"  Checking Docker image: {image_ref}")
         self._ensure_image(image_ref)
 
     def _validate_required_fields(self) -> None:
-        """
-        Check that all fields truly required by this tool are present.
-        Only raises errors for things that will definitely cause the tool to fail.
-        Optional fields that have sensible defaults are never required here.
-        """
         if self.config.name == "bakta":
             if not self.config.database:
                 raise RuntimeError(
                     f"  ✗  Bakta requires a database path.\n"
                     f"     Add to pipeline.yaml:\n"
                     f"       database:\n"
-                    f"         path: ~/bakta_db\n"
+                    f"         path: ~/.bactowise/databases/bakta\n"
                     f"         type: light\n"
-                    f"     Then download: bakta_db download --output ~/bakta_db --type light"
+                    f"     Then run: bactowise db download --bakta"
                 )
 
     def _ensure_image(self, image_ref: str) -> None:
@@ -100,7 +90,7 @@ class DockerToolRunner(BaseRunner):
         seen_layers = set()
         for line in self.client.api.pull(repo, tag=tag, stream=True, decode=True):
             layer_id = line.get("id", "")
-            status = line.get("status", "")
+            status   = line.get("status", "")
             if layer_id and layer_id not in seen_layers:
                 seen_layers.add(layer_id)
                 print(f"  [{layer_id}] {status}")
@@ -110,18 +100,20 @@ class DockerToolRunner(BaseRunner):
         print(f"  ✓  Image {image_ref} pulled successfully.")
 
     def run(self, fasta: Path) -> Path:
+        import docker
+
         print(f"\n[{self.config.name}] Starting annotation inside Docker...")
 
-        volumes = self._build_volumes(fasta)
-        cmd = self._build_command(fasta)
+        volumes  = self._build_volumes(fasta)
+        cmd      = self._build_command(fasta)
         log_file = self.log_dir / f"{self.config.name}.log"
 
-        print(f"[{self.config.name}] Image:   {self.config.image}")
-        print(f"[{self.config.name}] Command: {cmd}")
+        print(f"[{self.config.name}] Image:      {self.config.image}")
+        print(f"[{self.config.name}] Command:    {cmd}")
         print(f"[{self.config.name}] Logging to: {log_file}")
 
-        with open(log_file, "w") as log:
-            container = self.client.containers.run(
+        try:
+            output: bytes = self.client.containers.run(
                 self.config.image,
                 command=cmd,
                 volumes=volumes,
@@ -130,15 +122,40 @@ class DockerToolRunner(BaseRunner):
                 stdout=True,
                 stderr=True,
             )
-            output = container if isinstance(container, bytes) else b""
-            log.write(output.decode("utf-8", errors="replace"))
+            # containers.run(detach=False) returns combined stdout+stderr as bytes
+            with open(log_file, "wb") as log:
+                log.write(output if isinstance(output, bytes) else b"")
+
+        except docker.errors.ContainerError as e:
+            # The container ran but exited with a non-zero code.
+            # ContainerError carries stderr; write it to the log so the user
+            # can diagnose the failure, then re-raise with a clear message.
+            stderr_bytes = e.stderr if isinstance(e.stderr, bytes) else b""
+            with open(log_file, "wb") as log:
+                log.write(stderr_bytes)
+            raise RuntimeError(
+                f"[{self.config.name}] Container exited with error (code {e.exit_status}).\n"
+                f"Check logs at: {log_file}"
+            ) from e
+
+        except docker.errors.ImageNotFound as e:
+            raise RuntimeError(
+                f"[{self.config.name}] Docker image not found: {self.config.image}\n"
+                f"Run preflight checks first: bactowise validate -c pipeline.yaml"
+            ) from e
+
+        except docker.errors.APIError as e:
+            raise RuntimeError(
+                f"[{self.config.name}] Docker API error: {e}\n"
+                f"Check logs at: {log_file}"
+            ) from e
 
         print(f"[{self.config.name}] ✓ Finished. Output at: {self.output_dir}")
         return self.output_dir
 
     def _build_volumes(self, fasta: Path) -> dict:
         volumes = {
-            str(fasta.parent.resolve()): {"bind": "/input", "mode": "ro"},
+            str(fasta.parent.resolve()): {"bind": "/input",  "mode": "ro"},
             str(self.output_dir.resolve()): {"bind": "/output", "mode": "rw"},
         }
         if self.config.database:
@@ -153,8 +170,6 @@ class DockerToolRunner(BaseRunner):
         return f"--input /input/{fasta.name} --output /output"
 
     def _bakta_command(self, fasta: Path) -> str:
-        # Entrypoint is bakta itself — pass args only, genome first (required positional)
-        # --db and --output are always included as they map to the mounted volumes
         cmd = f"/input/{fasta.name} --db /db --output /output --force"
         for key, val in self.config.params.items():
             cmd += f" --{key} {val}"

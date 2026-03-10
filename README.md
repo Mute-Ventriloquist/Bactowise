@@ -51,42 +51,43 @@ conda install --use-local bactowise -c bioconda -c conda-forge
 
 ---
 
-### 3. Download the Bakta database (~2 GB, one-time)
+### 3. Download databases (one-time, ~4 GB total)
+
+BactoWise manages its own databases under `~/.bactowise/databases/`. A single command downloads everything:
 
 ```bash
-bakta_db download --output ~/bakta_db --type light
+bactowise db download
 ```
 
-Update `pipeline.yaml` if you save it somewhere other than `~/bakta_db`:
-```yaml
-database:
-  path: "~/bakta_db"
+This downloads and installs:
+- **CheckM** marker gene database (~2 GB) → `~/.bactowise/databases/checkm/`
+- **Bakta** annotation database, light build (~2 GB) → `~/.bactowise/databases/bakta/`
+
+The default `pipeline.yaml` already points to these paths — no edits needed.
+
+**Download individual databases:**
+```bash
+bactowise db download --checkm   # CheckM only
+bactowise db download --bakta    # Bakta only
 ```
+
+**Force a re-download** (e.g. to update to a newer database):
+```bash
+bactowise db download --force-db-download
+```
+
+**Check database status at any time:**
+```bash
+bactowise db status
+```
+
+> **If a download is interrupted**, just run `bactowise db download` again. BactoWise checks for
+> key marker files inside each database directory — not just whether the directory exists — so
+> partial downloads are detected and re-run automatically.
 
 ---
 
-### 4. Download the CheckM database (~2 GB, one-time)
-
-```bash
-mkdir -p ~/checkm_db
-cd ~/checkm_db
-wget https://data.ace.uq.edu.au/public/CheckM_databases/checkm_data_2015_01_16.tar.gz
-tar -xzf checkm_data_2015_01_16.tar.gz
-rm checkm_data_2015_01_16.tar.gz
-```
-
-Then point BactoWise to it in `pipeline.yaml`:
-```yaml
-- name: checkm
-  database:
-    path: "~/checkm_db"   # change this if you saved the database elsewhere
-```
-
-That's it. BactoWise automatically runs `checkm data setRoot` inside `checkm_env` every preflight — you never have to do it manually.
-
----
-
-### 5. Download the test genome (optional but recommended)
+### 4. Download the test genome (optional but recommended)
 
 ```bash
 # M. genitalium G37 — the "Hello World" of bacterial genomes (~580 kb, very fast to annotate)
@@ -168,11 +169,13 @@ tools:
       name: "checkm_env"
       channels: [bioconda, conda-forge]
       dependencies: [python=3.8]
+    database:
+      path: "~/.bactowise/databases/checkm"
     qc_criteria:
       completeness: 95.0
       contamination: 5.0
     params:
-      mode: taxonomy_wf   # taxonomy_wf (~2GB db) or lineage_wf (~40GB db, more accurate)
+      mode: taxonomy_wf
       rank: domain
       taxon: Bacteria
       threads: 4
@@ -197,7 +200,7 @@ tools:
     depends_on: [checkm]
     image: "oschwengers/bakta:v1.12.0"
     database:
-      path: "~/bakta_db"
+      path: "~/.bactowise/databases/bakta/db-light"
       type: light
     params:
       min-contig-length: 200
@@ -215,7 +218,9 @@ params:
   threads: 4
 ```
 
-The `lineage_wf` database is ~40 GB. Download it the same way as above and point `database.path` in `pipeline.yaml` to the same directory — BactoWise will call `checkm data setRoot` automatically.
+The `lineage_wf` database is ~40 GB. Download it the same way (`bactowise db download --checkm`)
+and point `database.path` in `pipeline.yaml` to the same directory — BactoWise will call
+`checkm data setRoot` automatically.
 
 ### Skipping QC and running annotation only
 
@@ -241,9 +246,10 @@ Prokka and Bakta will then run in parallel from the start with no QC gate.
 | Error | Fix |
 |---|---|
 | `Cannot connect to Docker` | Open Docker Desktop, wait for the whale 🐳 to stop animating |
-| `Database not found at ~/bakta_db` | Run `bakta_db download --output ~/bakta_db --type light` |
-| `CheckM database path not found` | Download the database and set `database.path` in `pipeline.yaml` — see setup step 4 |
+| `Database not found at ~/.bactowise/databases/bakta` | Run `bactowise db download --bakta` |
+| `CheckM database path not found` | Run `bactowise db download --checkm` |
 | `checkm_env not found` | Run `conda create -n checkm_env -c bioconda -c conda-forge checkm-genome=1.2.3 python=3.8 -y` |
 | `prokka not found on PATH` | BactoWise creates `prokka_env` automatically on first run — check preflight output |
 | `bactowise: command not found` | Run `conda activate <your-env>` first |
 | CheckM fails silently | Check `results/checkm/logs/checkm.log` for the full error |
+| Download interrupted | Re-run `bactowise db download` — partial downloads are detected automatically |
