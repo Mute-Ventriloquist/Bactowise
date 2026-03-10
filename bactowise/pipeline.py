@@ -6,6 +6,11 @@ from pathlib import Path
 from bactowise.models.config import PipelineConfig
 from bactowise.runners.base import BaseRunner
 from bactowise.runners.factory import RunnerFactory
+from bactowise.utils.db_manager import (
+    download_all,
+    is_checkm_present,
+    is_bakta_present,
+)
 
 
 class Pipeline:
@@ -65,6 +70,8 @@ class Pipeline:
 
         if self.skip:
             print(f"\n  Skipping preflight for: {', '.join(sorted(self.skip))}")
+
+        self._ensure_databases()
 
         errors = []
         for runner in self.runners.values():
@@ -144,6 +151,42 @@ class Pipeline:
             )
 
         return results
+
+    def _ensure_databases(self) -> None:
+        """
+        Check whether required databases are present and download any that are
+        missing. This runs automatically on every `bactowise run` so the user
+        never has to run `bactowise db download` manually on first use.
+
+        Only downloads databases that are actually needed by the active
+        (non-skipped) tools in this run.
+        """
+        tool_names = {t.name for t in self.config.tools} - self.skip
+
+        needs_checkm = "checkm" in tool_names
+        needs_bakta  = "bakta"  in tool_names
+
+        missing_checkm = needs_checkm and not is_checkm_present()
+        missing_bakta  = needs_bakta  and not is_bakta_present()
+
+        if not missing_checkm and not missing_bakta:
+            return
+
+        print("\n  Some required databases are missing — downloading now.")
+        print("  This is a one-time step (~4 GB). You can also run:")
+        print("  'bactowise db download' to manage databases manually.\n")
+
+        try:
+            download_all(
+                force=False,
+                checkm=missing_checkm,
+                bakta=missing_bakta,
+            )
+        except RuntimeError as e:
+            raise RuntimeError(
+                f"Database download failed: {e}\n"
+                f"You can retry manually with: bactowise db download"
+            ) from e
 
     def _build_stages(self) -> list[list[str]]:
         """

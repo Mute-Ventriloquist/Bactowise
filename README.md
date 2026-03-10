@@ -31,17 +31,6 @@ conda install --use-local bactowise -c bioconda -c conda-forge
 
 > **WSL users:** If `conda build` fails, see the [User Guide](DOCS.md#installation).
 
-### 3. Download databases (~4 GB, one-time)
-
-```bash
-bactowise db download
-```
-
-This fetches the CheckM and Bakta databases and stores them under `~/.bactowise/databases/`.
-The default `pipeline.yaml` already points to these paths.
-
-> Databases can also be downloaded automatically on first run — see the [User Guide](DOCS.md#databases).
-
 ---
 
 ## Running
@@ -54,7 +43,12 @@ bactowise validate -c pipeline.yaml
 bactowise run -f genome.fasta -c pipeline.yaml
 ```
 
-Results land in `./results/` with subdirectories for each tool.
+On first run, BactoWise will automatically download the required databases (~4 GB) before
+starting. Results land in `./results/` with subdirectories for each tool.
+
+> **Note:** Databases can also be downloaded ahead of time with `bactowise db download`.
+> See the [User Guide](DOCS.md#databases) for individual database options and how to
+> manage existing downloads.
 
 **Skip a tool** (e.g. if QC has already been done):
 

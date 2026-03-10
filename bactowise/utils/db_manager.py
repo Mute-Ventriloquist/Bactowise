@@ -73,10 +73,25 @@ def is_bakta_present(db_root: Path = DEFAULT_DB_ROOT) -> bool:
 
 # ── Download orchestration ─────────────────────────────────────────────────────
 
-def download_all(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> None:
-    """Download both CheckM and Bakta databases."""
-    download_checkm(force=force, db_root=db_root)
-    download_bakta(force=force, db_root=db_root)
+def download_all(
+    force: bool = False,
+    db_root: Path = DEFAULT_DB_ROOT,
+    checkm: bool = True,
+    bakta: bool = True,
+) -> None:
+    """Download CheckM and/or Bakta databases.
+
+    Parameters
+    ----------
+    force   : re-download even if already present
+    db_root : parent directory for all BactoWise databases
+    checkm  : whether to download the CheckM database
+    bakta   : whether to download the Bakta database
+    """
+    if checkm:
+        download_checkm(force=force, db_root=db_root)
+    if bakta:
+        download_bakta(force=force, db_root=db_root)
 
 
 def download_checkm(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path:
