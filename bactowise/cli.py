@@ -89,15 +89,23 @@ def db_download(
 
 @db_app.command("status")
 def db_status():
-    """Show database download status."""
+    """Show database status at the default install location only.
+
+    \b
+    This command only checks ~/.bactowise/databases/. It does not read
+    pipeline.yaml. If you have set custom database paths in pipeline.yaml,
+    check those paths manually — the pipeline will tell you at runtime if
+    a configured path is missing.
+    """
     typer.echo(f"\nBactoWise — Database Status")
-    typer.echo(f"  Storage: {DEFAULT_DB_ROOT}\n")
+    typer.echo(f"  Note: showing status for default location only ({DEFAULT_DB_ROOT}).")
+    typer.echo(f"  Custom paths set in pipeline.yaml are not checked here.\n")
 
     checkm_ok = is_checkm_present()
     bakta_ok  = is_bakta_present()
 
     typer.echo(f"  {'✓' if checkm_ok else '✗'}  CheckM  → {DEFAULT_DB_ROOT / 'checkm'}")
-    typer.echo(f"  {'✓' if bakta_ok  else '✗'}  Bakta   → {DEFAULT_DB_ROOT / 'bakta'}")
+    typer.echo(f"  {'✓' if bakta_ok  else '✗'}  Bakta   → {DEFAULT_DB_ROOT / 'bakta' / 'db-light'}")
 
     if not checkm_ok or not bakta_ok:
         typer.echo(f"\n  Run 'bactowise db download' to fetch missing databases.\n")
