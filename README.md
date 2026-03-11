@@ -49,6 +49,16 @@ conda install --use-local bactowise -c bioconda -c conda-forge
 
 > **WSL users:** If `conda build` fails, see the [User Guide](DOCS.md#installation).
 
+> **Note — testing a fresh install:** If you want to verify the package in a clean environment (recommended when iterating on the code), wipe and reinstall rather than updating in-place:
+> ```bash
+> conda build conda_recipe/ -c bioconda -c conda-forge
+>
+> conda env remove -n bactowise_dev -y
+> conda create -n bactowise_dev python=3.12 -y
+> conda activate bactowise_dev
+> conda install --use-local bactowise -c bioconda -c conda-forge
+> ```
+
 ---
 
 ## Running
