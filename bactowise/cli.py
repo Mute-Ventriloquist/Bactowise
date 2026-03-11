@@ -145,7 +145,7 @@ def run(
       Stage 2: prokka + bakta   — annotation (parallel)
 
     \b
-    On first run, any missing conda environments and Docker images are created
+    On first run, any missing conda environments and container images are created
     automatically. Databases are downloaded if not already present.
 
     \b
@@ -187,7 +187,7 @@ def validate(
 
     \b
     Checks structure, required fields, runtime values, and depends_on
-    references. Does not check Docker, conda environments, or database paths
+    references. Does not check Docker/Singularity, conda environments, or database paths
     — those are verified at runtime.
 
     \b

@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 from bactowise.models.config import DatabaseConfig, PipelineConfig, ToolConfig
+from bactowise.pipeline import Pipeline
 from bactowise.runners.factory import RunnerFactory
 from bactowise.utils.config_loader import load_config
 
@@ -43,7 +44,7 @@ class TestToolConfig:
 
     def test_invalid_runtime_raises(self):
         with pytest.raises(Exception):
-            ToolConfig(name="prokka", version="1.14.6", runtime="singularity")
+            ToolConfig(name="prokka", version="1.14.6", runtime="kubernetes")
 
 
 class TestPipelineConfig:
@@ -65,7 +66,7 @@ class TestPipelineConfig:
         assert config.threads == 4
 
     def test_empty_tools_raises(self, tmp_path):
-        with pytest.raises(Exception, match="at least one"):
+        with pytest.raises(Exception, match="(?i)at least one"):
             PipelineConfig(tools=[], output_dir=str(tmp_path))
 
     def test_output_dir_defaults(self):
@@ -135,11 +136,21 @@ class TestRunnerFactory:
             runner = RunnerFactory.create(tool, tmp_path)
             assert isinstance(runner, DockerToolRunner)
 
+    def test_singularity_runtime_returns_singularity_runner(self, tmp_path):
+        from bactowise.runners.singularity_runner import SingularityToolRunner
+        tool = ToolConfig(
+            name="bakta", version="1.9.3", runtime="singularity",
+            image="oschwengers/bakta:1.9.3"
+        )
+        # SingularityToolRunner has no external connection in __init__ — no mock needed
+        runner = RunnerFactory.create(tool, tmp_path)
+        assert isinstance(runner, SingularityToolRunner)
+
     def test_unknown_runtime_raises(self, tmp_path):
         tool = ToolConfig.__new__(ToolConfig)
         object.__setattr__(tool, "name", "sometool")
         object.__setattr__(tool, "version", "1.0")
-        object.__setattr__(tool, "runtime", "singularity")   # not supported
+        object.__setattr__(tool, "runtime", "kubernetes")   # not supported
         object.__setattr__(tool, "image", None)
         object.__setattr__(tool, "database", None)
         object.__setattr__(tool, "params", {})

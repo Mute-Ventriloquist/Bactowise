@@ -13,13 +13,31 @@ If the genome fails QC thresholds, BactoWise warns you and continues — the sci
 
 ## Setup
 
-### 1. Install Docker
+### 1. Install a container runtime
 
-Bakta runs inside Docker. Install Docker Desktop for [Mac/Windows](https://docker.com) or on Linux:
+Bakta runs inside a container. Use **Singularity/Apptainer** on HPC/SLURM clusters, or **Docker** on a local workstation.
 
+**Singularity / Apptainer (HPC — recommended for SLURM):**
 ```bash
+# Most HPC clusters already have it — just load the module:
+module load singularity
+
+# If not available, contact your sysadmin, or install Apptainer locally:
+# https://apptainer.org/docs/admin/main/installation.html
+```
+
+**Docker (local workstation):**
+```bash
+# Mac/Windows: download Docker Desktop from https://docker.com
+# Linux:
 sudo apt install docker.io && sudo systemctl start docker
 sudo usermod -aG docker $USER && newgrp docker
+```
+
+Set the runtime in `pipeline.yaml` to match what you have:
+```yaml
+- name: bakta
+  runtime: singularity   # or: docker
 ```
 
 ### 2. Install BactoWise
@@ -43,8 +61,7 @@ bactowise validate -c pipeline.yaml
 bactowise run -f genome.fasta -c pipeline.yaml
 ```
 
-On first run, BactoWise will automatically download the required databases (~4 GB) before
-starting. Results land in `./results/` with subdirectories for each tool.
+On first run, BactoWise will automatically download the required databases (~4 GB) and pull the Bakta container image before starting. Results land in `./results/` with subdirectories for each tool.
 
 > **Note:** Databases can also be downloaded ahead of time with `bactowise db download`.
 > See the [User Guide](DOCS.md#databases) for individual database options and how to

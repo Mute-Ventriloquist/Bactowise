@@ -7,6 +7,7 @@ from bactowise.runners.base import BaseRunner
 from bactowise.runners.checkm_runner import CheckMRunner
 from bactowise.runners.conda_runner import CondaToolRunner
 from bactowise.runners.docker_runner import DockerToolRunner
+from bactowise.runners.singularity_runner import SingularityToolRunner
 
 
 class RunnerFactory:
@@ -25,8 +26,10 @@ class RunnerFactory:
             return CondaToolRunner(tool_config, output_dir)
         elif tool_config.runtime == "docker":
             return DockerToolRunner(tool_config, output_dir)
+        elif tool_config.runtime == "singularity":
+            return SingularityToolRunner(tool_config, output_dir)
         else:
             raise ValueError(
                 f"Unknown runtime '{tool_config.runtime}' for tool '{tool_config.name}'.\n"
-                f"Supported runtimes: conda, docker"
+                f"Supported runtimes: conda, docker, singularity"
             )
