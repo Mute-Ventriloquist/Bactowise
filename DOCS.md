@@ -1,21 +1,22 @@
 # BactoWise — Documentation
 
 - [User Guide](#user-guide)
-  - [Installation](#installation)
-  - [Databases](#databases)
-  - [Running the pipeline](#running-the-pipeline)
-  - [Skipping tools](#skipping-tools)
-  - [Understanding QC output](#understanding-qc-output)
-  - [Troubleshooting](#troubleshooting)
+  - [1. Installation](#1-installation)
+  - [2. Databases](#2-databases)
+  - [3. Running the pipeline](#3-running-the-pipeline)
+  - [4. Skipping tools](#4-skipping-tools)
+  - [5. Understanding QC output](#5-understanding-qc-output)
+  - [6. Downstream analysis — pangenome with Panaroo](#6-downstream-analysis--pangenome-with-panaroo)
+  - [7. Troubleshooting](#7-troubleshooting)
 - [Developer Guide](#developer-guide)
-  - [pipeline.yaml field reference](#pipelineyaml-field-reference)
-  - [Adding a new tool](#adding-a-new-tool)
+  - [1. pipeline.yaml field reference](#1-pipelineyaml-field-reference)
+  - [2. Adding a new tool](#2-adding-a-new-tool)
 
 ---
 
 # User Guide
 
-## Installation
+## 1. Installation
 
 ### Docker
 
@@ -50,7 +51,7 @@ conda mambabuild --suppress-variables -c conda-forge -c bioconda conda_recipe/
 
 ---
 
-## Databases
+## 2. Databases
 
 BactoWise stores all databases under `~/.bactowise/databases/` and manages
 them through the `bactowise db` command. The default `pipeline.yaml` already
@@ -95,7 +96,7 @@ re-run automatically.
 
 ---
 
-## Running the pipeline
+## 3. Running the pipeline
 
 ### Get a test genome
 
@@ -153,7 +154,7 @@ results/
 
 ---
 
-## Skipping tools
+## 4. Skipping tools
 
 Use `--skip` to exclude a tool from a run without editing the config file.
 The flag accepts any tool name defined in `pipeline.yaml` and can be repeated.
@@ -184,7 +185,7 @@ bactowise run -f genome.fasta -c pipeline.yaml --skip prokka --skip bakta
 
 ---
 
-## Understanding QC output
+## 5. Understanding QC output
 
 `results/checkm/checkm_summary.tsv` contains one row per genome:
 
@@ -212,7 +213,7 @@ QC thresholds can be adjusted in `pipeline.yaml`:
 
 ---
 
-## Downstream analysis — pangenome with Panaroo
+## 6. Downstream analysis — pangenome with Panaroo
 
 Panaroo is a pangenome pipeline that takes GFF annotation files as input and
 computes core and accessory genome statistics across multiple bacterial isolates.
@@ -269,7 +270,7 @@ all available options.
 
 ---
 
-## Troubleshooting
+## 7. Troubleshooting
 
 | Error | Fix |
 |---|---|
@@ -286,7 +287,7 @@ all available options.
 
 # Developer Guide
 
-## pipeline.yaml field reference
+## 1. pipeline.yaml field reference
 
 Every tool block in `pipeline.yaml` is validated by Pydantic before anything
 runs. Unknown fields are rejected with a clear error message.
@@ -327,7 +328,7 @@ runs. Unknown fields are rejected with a clear error message.
 
 ---
 
-## Adding a new tool
+## 2. Adding a new tool
 
 The pipeline is designed so that adding a new tool requires a config entry and
 — if the tool needs special invocation logic beyond the generic pattern — a new
