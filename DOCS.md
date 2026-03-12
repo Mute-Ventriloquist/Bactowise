@@ -212,6 +212,63 @@ QC thresholds can be adjusted in `pipeline.yaml`:
 
 ---
 
+## Downstream analysis — pangenome with Panaroo
+
+Panaroo is a pangenome pipeline that takes GFF annotation files as input and
+computes core and accessory genome statistics across multiple bacterial isolates.
+BactoWise does not orchestrate Panaroo — you run it separately after BactoWise
+has finished. The GFF files produced by Bakta and Prokka are directly compatible
+with Panaroo's input requirements.
+
+### Which output files to use
+
+After a BactoWise run, the annotation outputs are at:
+
+```
+results/
+├── bakta/
+│   └── *.gff3          ← use this for Bakta output
+└── prokka/
+    └── prokka_output.gff   ← use this for Prokka output
+```
+
+When combining annotations from multiple isolates — for instance, one annotated
+with Bakta and others with Prokka — pass all the GFF files together to Panaroo
+in a single command. Panaroo handles mixed Bakta/Prokka input without issue.
+
+### Installing Panaroo
+
+Panaroo requires Python 3.9 and has its own dependency constraints, so a
+dedicated environment is recommended rather than installing into your BactoWise
+environment.
+
+```bash
+conda create -n panaroo_env python=3.9 -y
+conda activate panaroo_env
+conda install -c conda-forge -c bioconda -c defaults 'panaroo>=1.3'
+```
+
+### Running Panaroo
+
+```bash
+conda activate panaroo_env
+
+panaroo \
+  -i /path/to/results/bakta/*.gff3 \
+      /path/to/results/prokka/*.gff \
+      /path/to/other/annotations/*.gff \
+  -o /path/to/panaroo_output \
+  --clean-mode strict \
+  -t 4
+```
+
+`--clean-mode strict` is appropriate for high-quality assemblies. Use `moderate`
+or `sensitive` if working with lower-quality or more divergent genomes. See the
+[Panaroo documentation](https://gtonkinhill.github.io/panaroo) for details on
+all available options.
+
+---
+
 ## Troubleshooting
 
 | Error | Fix |
