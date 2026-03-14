@@ -146,6 +146,42 @@ class TestRunnerFactory:
         runner = RunnerFactory.create(tool, tmp_path)
         assert isinstance(runner, SingularityToolRunner)
 
+    def test_pgap_name_returns_pgap_runner(self, tmp_path):
+        from bactowise.runners.pgap_runner import PGAPRunner
+        tool = ToolConfig(
+            name="pgap", version="2024-07-18.build7555", runtime="pgap",
+            params={"organism": "Mycoplasmoides genitalium"}
+        )
+        # PGAPRunner has no external connection in __init__ — no mock needed
+        runner = RunnerFactory.create(tool, tmp_path)
+        assert isinstance(runner, PGAPRunner)
+
+    def test_pgap_command_structure(self, tmp_path):
+        from bactowise.runners.pgap_runner import PGAPRunner
+        tool = ToolConfig(
+            name="pgap", version="2024-07-18.build7555", runtime="pgap",
+            params={"organism": "Mycoplasmoides genitalium", "threads": 4}
+        )
+        runner = PGAPRunner(tool, tmp_path)
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+        cmd = runner._build_command(
+            pgap_bin="/usr/local/bin/pgap.py",
+            runtime_bin="/usr/bin/singularity",
+            fasta=fasta,
+            organism="Mycoplasmoides genitalium",
+            threads=4,
+            report_usage=False,
+        )
+        assert "/usr/local/bin/pgap.py" in cmd
+        assert "-g" in cmd
+        assert "-s" in cmd
+        assert "Mycoplasmoides genitalium" in cmd
+        assert "-D" in cmd
+        assert "/usr/bin/singularity" in cmd
+        assert "-n" in cmd          # report_usage=False → -n flag
+        assert "--no-internet" in cmd
+
     def test_unknown_runtime_raises(self, tmp_path):
         tool = ToolConfig.__new__(ToolConfig)
         object.__setattr__(tool, "name", "sometool")

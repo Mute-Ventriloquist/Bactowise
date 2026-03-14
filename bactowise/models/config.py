@@ -57,7 +57,7 @@ class QcCriteria(BaseModel):
 class ToolConfig(BaseModel):
     name: str
     version: str
-    runtime: Literal["conda", "docker", "singularity"]
+    runtime: Literal["conda", "docker", "singularity", "pgap"]
     role: Literal["qc", "annotation"] = "annotation"
     image: Optional[str] = None
     database: Optional[DatabaseConfig] = None
