@@ -361,3 +361,141 @@ class TestPipelineSkip:
             mock_docker.return_value.ping.return_value = True
             pipeline = Pipeline(config, skip=set())
         assert set(pipeline.runners.keys()) == {"checkm", "prokka", "bakta"}
+
+
+# ─── GFF bypass tests ─────────────────────────────────────────────────────────
+
+class TestGFFBypass:
+    """
+    Tests for the --gff / Pipeline(gff_files=...) feature.
+    Uses the same three-tool config as TestPipelineSkip.
+    No real tools are invoked — runners are mocked where needed.
+    """
+
+    def _make_config(self, tmp_path) -> "PipelineConfig":
+        return PipelineConfig(**{
+            "tools": [
+                {
+                    "name": "checkm",
+                    "version": "1.2.3",
+                    "runtime": "conda",
+                    "role": "qc",
+                },
+                {
+                    "name": "prokka",
+                    "version": "1.14.6",
+                    "runtime": "conda",
+                    "depends_on": ["checkm"],
+                },
+                {
+                    "name": "bakta",
+                    "version": "1.9.3",
+                    "runtime": "docker",
+                    "image": "oschwengers/bakta:1.9.3",
+                    "depends_on": ["checkm"],
+                },
+            ],
+            "output_dir": str(tmp_path),
+        })
+
+    def _make_gff_files(self, tmp_path) -> dict:
+        """Create real (empty) GFF files so existence checks pass."""
+        bakta_gff  = tmp_path / "bakta.gff3"
+        prokka_gff = tmp_path / "prokka.gff"
+        bakta_gff.touch()
+        prokka_gff.touch()
+        return {"bakta": bakta_gff, "prokka": prokka_gff}
+
+    def test_annotation_tools_returns_correct_set(self, tmp_path):
+        """_annotation_tools() should return exactly the stage-2 tools."""
+        config = self._make_config(tmp_path)
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config)
+        assert pipeline._annotation_tools() == {"prokka", "bakta"}
+
+    def test_all_gffs_provided_passes_validation(self, tmp_path):
+        """Providing GFF for all annotation tools should not raise."""
+        config = self._make_config(tmp_path)
+        gff_files = self._make_gff_files(tmp_path)
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            # Should not raise
+            pipeline = Pipeline(config, gff_files=gff_files)
+        assert set(pipeline.gff_files.keys()) == {"bakta", "prokka"}
+
+    def test_partial_gff_raises(self, tmp_path):
+        """Providing GFF for only one annotation tool must raise."""
+        config = self._make_config(tmp_path)
+        bakta_gff = tmp_path / "bakta.gff3"
+        bakta_gff.touch()
+        with pytest.raises(ValueError, match="ALL annotation tools or NONE"):
+            with patch("docker.from_env") as mock_docker:
+                mock_docker.return_value.ping.return_value = True
+                Pipeline(config, gff_files={"bakta": bakta_gff})
+
+    def test_no_gff_passes_validation(self, tmp_path):
+        """Providing no GFF files is always valid."""
+        config = self._make_config(tmp_path)
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, gff_files=None)
+        assert pipeline.gff_files == {}
+
+    def test_gff_for_unknown_tool_raises(self, tmp_path):
+        """GFF for a tool not in the config should raise."""
+        config = self._make_config(tmp_path)
+        fake = tmp_path / "fake.gff"
+        fake.touch()
+        with pytest.raises(ValueError, match="ALL annotation tools or NONE"):
+            with patch("docker.from_env") as mock_docker:
+                mock_docker.return_value.ping.return_value = True
+                Pipeline(config, gff_files={"nonexistent": fake})
+
+    def test_gff_and_skip_same_tool_raises(self, tmp_path):
+        """Same tool in both --gff and --skip is contradictory — must raise."""
+        config = self._make_config(tmp_path)
+        gff_files = self._make_gff_files(tmp_path)
+        with pytest.raises(ValueError, match="both --gff and --skip"):
+            with patch("docker.from_env") as mock_docker:
+                mock_docker.return_value.ping.return_value = True
+                Pipeline(config, skip={"bakta"}, gff_files=gff_files)
+
+    def test_gff_missing_file_raises(self, tmp_path):
+        """GFF path that does not exist on disk must raise FileNotFoundError."""
+        config = self._make_config(tmp_path)
+        with pytest.raises(FileNotFoundError, match="not found"):
+            with patch("docker.from_env") as mock_docker:
+                mock_docker.return_value.ping.return_value = True
+                Pipeline(config, gff_files={
+                    "bakta":  tmp_path / "does_not_exist.gff3",
+                    "prokka": tmp_path / "also_missing.gff",
+                })
+
+    def test_gff_bypass_creates_no_runners_for_bypassed_tools(self, tmp_path):
+        """Bypassed tools must not have runners created — no Docker contact."""
+        config = self._make_config(tmp_path)
+        gff_files = self._make_gff_files(tmp_path)
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, gff_files=gff_files)
+        # Only checkm should have a runner; bypassed tools should not
+        assert "checkm" in pipeline.runners
+        assert "bakta"  not in pipeline.runners
+        assert "prokka" not in pipeline.runners
+
+    def test_apply_gff_bypass_copies_files(self, tmp_path):
+        """_apply_gff_bypass() must copy GFF files to the tool output directories."""
+        config = self._make_config(tmp_path)
+        gff_files = self._make_gff_files(tmp_path)
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, gff_files=gff_files)
+
+        results = {}
+        pipeline._apply_gff_bypass(["bakta", "prokka"], results)
+
+        assert "bakta"  in results
+        assert "prokka" in results
+        assert (results["bakta"]  / "provided_bakta.gff3").exists()
+        assert (results["prokka"] / "provided_prokka.gff").exists()

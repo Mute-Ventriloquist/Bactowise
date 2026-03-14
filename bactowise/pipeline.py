@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+import shutil
 
 from bactowise.models.config import PipelineConfig
 from bactowise.runners.base import BaseRunner
@@ -41,7 +42,12 @@ class Pipeline:
         prokka, bakta    → stage 0 (checkm treated as satisfied, run immediately)
     """
 
-    def __init__(self, config: PipelineConfig, skip: set[str] | None = None):
+    def __init__(
+        self,
+        config: PipelineConfig,
+        skip: set[str] | None = None,
+        gff_files: dict[str, Path] | None = None,
+    ):
         self.config = config
         self.skip: set[str] = set(skip or [])
 
@@ -54,13 +60,22 @@ class Pipeline:
                 f"Available tools: {', '.join(sorted(known_tools))}"
             )
 
-        # Only create runners for tools that are not being skipped.
-        # This means skipped tools never connect to Docker / conda, so preflight
-        # for those tools is also cleanly bypassed.
+        # Validate and store GFF bypass files.
+        # _validate_gff_files() enforces all-or-nothing against the annotation
+        # tool set, checks for conflicts with --skip, and verifies files exist.
+        self.gff_files: dict[str, Path] = {}
+        if gff_files:
+            self._validate_gff_files(gff_files)
+            self.gff_files = {k: v.resolve() for k, v in gff_files.items()}
+
+        # Only create runners for tools that are not being skipped AND not being
+        # bypassed via --gff. GFF-bypassed tools never need a runner because
+        # their output is provided directly — no Docker / conda contact needed.
+        bypassed = set(self.gff_files.keys())
         self.runners: dict[str, BaseRunner] = {
             tool.name: RunnerFactory.create(tool, config.output_dir)
             for tool in config.tools
-            if tool.name not in self.skip
+            if tool.name not in self.skip and tool.name not in bypassed
         }
 
     def preflight(self) -> None:
@@ -70,6 +85,8 @@ class Pipeline:
 
         if self.skip:
             print(f"\n  Skipping preflight for: {', '.join(sorted(self.skip))}")
+        if self.gff_files:
+            print(f"\n  GFF bypass active for:  {', '.join(sorted(self.gff_files))}")
 
         self._ensure_databases()
 
@@ -101,6 +118,8 @@ class Pipeline:
         print("="*50)
         if self.skip:
             print(f"  Skipping tool(s): {', '.join(sorted(self.skip))}")
+        if self.gff_files:
+            print(f"  GFF bypass for:   {', '.join(sorted(self.gff_files))}")
         print(f"  Running {total} tool(s) in {len(stages)} stage(s)")
         print(f"  Input:  {fasta}")
         print(f"  Output: {self.config.output_dir}")
@@ -111,6 +130,12 @@ class Pipeline:
 
         for stage_num, stage_tools in enumerate(stages, 1):
             print(f"\n── Stage {stage_num}: {', '.join(stage_tools)} {'─'*20}\n")
+
+            # If every tool in this stage has a GFF file provided, bypass
+            # execution entirely — copy files to output dirs and move on.
+            if all(name in self.gff_files for name in stage_tools):
+                self._apply_gff_bypass(stage_tools, results)
+                continue
 
             # Warn if any skipped dependency of tools in this stage was a QC tool
             self._warn_skipped_qc(stage_tools)
@@ -139,8 +164,11 @@ class Pipeline:
         print("="*50)
         for tool_name in sorted(self.skip):
             print(f"  ⊘  {tool_name:15s} → skipped")
+        for tool_name in sorted(self.gff_files):
+            print(f"  ↩  {tool_name:15s} → GFF provided")
         for tool_name, output_path in results.items():
-            print(f"  ✓  {tool_name:15s} → {output_path}")
+            if tool_name not in self.gff_files:
+                print(f"  ✓  {tool_name:15s} → {output_path}")
         for tool_name, error in errors.items():
             print(f"  ✗  {tool_name:15s} → FAILED: {error}")
         print()
@@ -152,6 +180,90 @@ class Pipeline:
 
         return results
 
+    def _annotation_tools(self) -> set[str]:
+        """
+        Return the names of all annotation tools — i.e. tools that are not in
+        stage 0 (they have at least one dependency) and are not being skipped.
+
+        This set is what --gff files must cover: exactly all of these tools,
+        or none of them. It scales automatically as tools are added to the
+        config — no code change needed when PGAP is uncommented.
+        """
+        return {
+            t.name for t in self.config.tools
+            if t.depends_on and t.name not in self.skip
+        }
+
+    def _validate_gff_files(self, gff_files: dict[str, Path]) -> None:
+        """
+        Enforce all-or-nothing GFF bypass rules:
+
+        1. No tool may appear in both --gff and --skip (contradictory).
+        2. GFF files must be provided for ALL annotation tools or NONE.
+        3. Every provided GFF path must exist on disk.
+        """
+        annotation_tools = self._annotation_tools()
+        provided         = set(gff_files.keys())
+
+        # Rule 1: --gff and --skip cannot name the same tool
+        conflict = provided & self.skip
+        if conflict:
+            raise ValueError(
+                f"Tool(s) appear in both --gff and --skip: "
+                f"{', '.join(sorted(conflict))}.\n"
+                f"Use --skip to exclude a tool entirely, or --gff to provide "
+                f"its pre-computed output — not both."
+            )
+
+        # Rule 2: all-or-nothing
+        if provided and provided != annotation_tools:
+            missing = annotation_tools - provided
+            extra   = provided - annotation_tools
+            lines   = [
+                "GFF files must be provided for ALL annotation tools or NONE.\n"
+            ]
+            if missing:
+                lines.append(
+                    f"  Missing : {', '.join(sorted(missing))}"
+                )
+            if extra:
+                lines.append(
+                    f"  Unknown : {', '.join(sorted(extra))} "
+                    f"(not annotation tools in this config)"
+                )
+            lines.append(
+                f"\n  Annotation tools in this config: "
+                f"{', '.join(sorted(annotation_tools))}"
+            )
+            raise ValueError("\n".join(lines))
+
+        # Rule 3: files must exist
+        for tool_name, path in gff_files.items():
+            if not path.exists():
+                raise FileNotFoundError(
+                    f"GFF file for '{tool_name}' not found: {path}"
+                )
+
+    def _apply_gff_bypass(
+        self, stage_tools: list[str], results: dict[str, Path]
+    ) -> None:
+        """
+        Copy each provided GFF file into the tool's standard output directory
+        so downstream steps (e.g. Panaroo) always find outputs in the same
+        place regardless of whether annotation was run or provided.
+        """
+        for tool_name in stage_tools:
+            src             = self.gff_files[tool_name]
+            tool_output_dir = self.config.output_dir / tool_name
+            tool_output_dir.mkdir(parents=True, exist_ok=True)
+
+            dst = tool_output_dir / f"provided_{src.name}"
+            shutil.copy2(src, dst)
+
+            results[tool_name] = tool_output_dir
+            print(f"  ↩  [{tool_name}] Using provided GFF: {src}")
+            print(f"              Copied to: {dst}")
+
     def _ensure_databases(self) -> None:
         """
         Check whether required databases are present and download any that are
@@ -161,7 +273,7 @@ class Pipeline:
         Only downloads databases that are actually needed by the active
         (non-skipped) tools in this run.
         """
-        tool_names = {t.name for t in self.config.tools} - self.skip
+        tool_names = {t.name for t in self.config.tools} - self.skip - set(self.gff_files)
 
         needs_checkm = "checkm" in tool_names
         needs_bakta  = "bakta"  in tool_names

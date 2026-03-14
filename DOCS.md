@@ -5,9 +5,10 @@
   - [2. Databases](#2-databases)
   - [3. Running the pipeline](#3-running-the-pipeline)
   - [4. Skipping tools](#4-skipping-tools)
-  - [5. Understanding QC output](#5-understanding-qc-output)
-  - [6. Downstream analysis — pangenome with Panaroo](#6-downstream-analysis--pangenome-with-panaroo)
-  - [7. Troubleshooting](#7-troubleshooting)
+  - [5. Bypassing annotation with pre-computed GFF files](#5-bypassing-annotation-with-pre-computed-gff-files)
+  - [6. Understanding QC output](#6-understanding-qc-output)
+  - [7. Downstream analysis — pangenome with Panaroo](#7-downstream-analysis--pangenome-with-panaroo)
+  - [8. Troubleshooting](#8-troubleshooting)
 - [Developer Guide](#developer-guide)
   - [1. pipeline.yaml field reference](#1-pipelineyaml-field-reference)
   - [2. Adding a new tool](#2-adding-a-new-tool)
@@ -185,7 +186,93 @@ bactowise run -f genome.fasta -c pipeline.yaml --skip prokka --skip bakta
 
 ---
 
-## 5. Understanding QC output
+## 5. Bypassing annotation with pre-computed GFF files
+
+If you already have annotation results from a previous run — or from running
+Bakta, Prokka, or PGAP independently — you can provide those GFF files
+directly and skip stage 2 entirely. CheckM still runs as normal unless you
+also pass `--skip checkm`.
+
+### All-or-nothing policy
+
+You must provide GFF files for **all** annotation tools defined in your
+pipeline, or **none** of them. Partial bypass — where some tools run and
+others use pre-computed files — is not permitted and will be rejected with
+a clear error before anything runs.
+
+This policy exists to keep results consistent. Providing all files or none
+ensures each run tells a coherent story. When you add PGAP to your pipeline
+by uncommenting its block in `pipeline.yaml`, the required set automatically
+grows to three. BactoWise derives the required set from the active tools at
+runtime — no other configuration change is needed.
+
+### Usage
+
+```bash
+# Bypass stage 2 — provide GFF for all annotation tools
+bactowise run -f genome.fasta -c pipeline.yaml \
+  --gff bakta:/path/to/bakta.gff3 \
+  --gff prokka:/path/to/prokka.gff
+```
+
+Each `--gff` flag takes the format `tool:path`. The tool name must match the
+name in `pipeline.yaml` exactly (e.g. `bakta`, `prokka`, `pgap`).
+
+You can also combine `--gff` with `--skip checkm` to bypass both stages:
+
+```bash
+bactowise run -f genome.fasta -c pipeline.yaml \
+  --skip checkm \
+  --gff bakta:/path/to/bakta.gff3 \
+  --gff prokka:/path/to/prokka.gff
+```
+
+### What happens to the provided files
+
+BactoWise copies each GFF file into the standard output directory for that
+tool so that downstream steps always find results in the same place,
+regardless of whether annotation was run or provided:
+
+```
+results/
+├── bakta/
+│   └── provided_bakta.gff3    ← copied from your --gff path
+└── prokka/
+    └── provided_prokka.gff    ← copied from your --gff path
+```
+
+### What the pipeline summary shows
+
+```
+  ⊘  checkm          → skipped
+  ↩  bakta           → GFF provided
+  ↩  prokka          → GFF provided
+```
+
+### Error cases caught before anything runs
+
+**Partial bypass (missing tools):**
+```
+✗ GFF files must be provided for ALL annotation tools or NONE.
+  Missing : prokka
+  Annotation tools in this config: bakta, prokka
+```
+
+**Same tool in both --gff and --skip:**
+```
+✗ Tool(s) appear in both --gff and --skip: bakta.
+  Use --skip to exclude a tool entirely, or --gff to provide its
+  pre-computed output — not both.
+```
+
+**GFF file not found on disk:**
+```
+✗ GFF file for 'bakta' not found: /path/to/bakta.gff3
+```
+
+---
+
+## 6. Understanding QC output
 
 `results/checkm/checkm_summary.tsv` contains one row per genome:
 
@@ -213,7 +300,7 @@ QC thresholds can be adjusted in `pipeline.yaml`:
 
 ---
 
-## 6. Downstream analysis — pangenome with Panaroo
+## 7. Downstream analysis — pangenome with Panaroo
 
 Panaroo is a pangenome pipeline that takes GFF annotation files as input and
 computes core and accessory genome statistics across multiple bacterial isolates.
@@ -270,7 +357,7 @@ all available options.
 
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 | Error | Fix |
 |---|---|

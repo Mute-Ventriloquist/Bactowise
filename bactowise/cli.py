@@ -136,6 +136,14 @@ def run(
             "Dependents still run; a warning is shown if a QC tool is skipped."
         ),
     ),
+    gff: list[str] = typer.Option(
+        [], "--gff",
+        help=(
+            "Provide a pre-computed GFF file for a tool, bypassing stage 2. "
+            "Format: 'tool:path'  (e.g. --gff bakta:/results/bakta.gff3). "
+            "Repeatable. Must supply for ALL annotation tools or NONE."
+        ),
+    ),
 ):
     """Run QC and annotation on a genome.
 
@@ -149,21 +157,45 @@ def run(
     automatically. Databases are downloaded if not already present.
 
     \b
+    GFF bypass — skip stage 2 by providing pre-computed annotation files.
+    Must provide GFF for ALL annotation tools or NONE (no partial bypass):
+      bactowise run -f genome.fasta -c pipeline.yaml \\
+        --gff bakta:/path/to/bakta.gff3 \\
+        --gff prokka:/path/to/prokka.gff
+
+    \b
     Examples:
       bactowise run -f genome.fasta -c pipeline.yaml
       bactowise run -f genome.fasta -c pipeline.yaml --skip checkm
       bactowise run -f genome.fasta -c pipeline.yaml --skip prokka --skip bakta
+      bactowise run -f genome.fasta -c pipeline.yaml \\
+        --gff bakta:/results/bakta.gff3 --gff prokka:/results/prokka.gff
     """
+    # Parse --gff tool:path entries
+    gff_files: dict[str, Path] = {}
+    for entry in gff:
+        if ":" not in entry:
+            typer.echo(
+                f"\n✗ Invalid --gff format: '{entry}'\n"
+                f"  Expected: tool:path  (e.g. --gff bakta:/results/bakta.gff3)",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        tool_name, _, raw_path = entry.partition(":")
+        gff_files[tool_name.strip()] = Path(raw_path.strip())
+
     typer.echo(f"\nBactoWise")
     typer.echo(f"  Genome : {fasta}")
     typer.echo(f"  Config : {config}")
     if skip:
         typer.echo(f"  Skip   : {', '.join(skip)}")
+    if gff_files:
+        typer.echo(f"  GFF    : {', '.join(f'{t}:{p}' for t, p in gff_files.items())}")
     typer.echo()
 
     try:
         pipeline_config = load_config(config)
-        pipeline = Pipeline(pipeline_config, skip=set(skip))
+        pipeline = Pipeline(pipeline_config, skip=set(skip), gff_files=gff_files or None)
         pipeline.run(fasta)
     except (FileNotFoundError, ValueError) as e:
         typer.echo(f"\n✗ {e}", err=True)
