@@ -18,10 +18,10 @@ tools:
     conda_env:
       name: "checkm_env"
       channels:
-        - bioconda
         - conda-forge
-      dependencies:
-        - python=3.8
+        - bioconda
+        - defaults
+      dependencies: []
     database:
       path: "~/.bactowise/databases/checkm"
     qc_criteria:
@@ -40,10 +40,10 @@ tools:
     conda_env:
       name: "prokka_env"
       channels:
-        - bioconda
         - conda-forge
-      dependencies:
-        - python=3.8
+        - bioconda
+        - defaults
+      dependencies: []
     params:
       genus: "Mycoplasma"
       species: "genitalium"
