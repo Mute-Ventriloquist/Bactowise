@@ -1,0 +1,89 @@
+# BactoWise — bundled pipeline configuration
+#
+# This file is managed by BactoWise. Do not edit it manually.
+# It was installed to ~/.bactowise/config/pipeline.yaml by BactoWise.
+#
+# To reset this file to the version bundled with your installed BactoWise:
+#   bactowise init --reset
+#
+# To see what version of BactoWise installed this file:
+#   bactowise --version
+
+tools:
+
+  - name: checkm
+    version: "1.2.3"
+    runtime: conda
+    role: qc
+    conda_env:
+      name: "checkm_env"
+      channels:
+        - bioconda
+        - conda-forge
+      dependencies:
+        - python=3.8
+    database:
+      path: "~/.bactowise/databases/checkm"
+    qc_criteria:
+      completeness: 95.0
+      contamination: 5.0
+    params:
+      mode: taxonomy_wf
+      rank: domain
+      taxon: Bacteria
+      threads: 4
+
+  - name: prokka
+    version: "1.14.6"
+    runtime: conda
+    depends_on: [checkm]
+    conda_env:
+      name: "prokka_env"
+      channels:
+        - bioconda
+        - conda-forge
+      dependencies:
+        - python=3.8
+    params:
+      genus: "Mycoplasma"
+      species: "genitalium"
+      kingdom: Bacteria
+      cpus: 4
+
+  - name: bakta
+    version: "1.12.0"
+    runtime: singularity
+    depends_on: [checkm]
+    image: "oschwengers/bakta:v1.12.0"
+    database:
+      path: "~/.bactowise/databases/bakta/db-light"
+      type: light
+    params:
+      min-contig-length: 200
+      threads: 4
+
+# ── PGAP (commented out — uncomment once prerequisites are in place) ──────────
+#
+# Prerequisites (one-time, done outside BactoWise):
+#   1. Download pgap.py and put it on PATH:
+#        curl -OL https://github.com/ncbi/pgap/raw/prod/scripts/pgap.py
+#        chmod +x pgap.py && mv pgap.py ~/.local/bin/
+#
+#   2. Download the supplemental data (~30 GB, ~100 GB working space needed):
+#        pgap.py --update
+#
+#   3. Ensure Singularity or Docker is available on PATH.
+#
+# Once the above are done, uncomment this block and run bactowise init --reset.
+#
+#  - name: pgap
+#    version: "2024-07-18.build7555"
+#    runtime: pgap
+#    depends_on: [checkm]
+#    params:
+#      organism: "Mycoplasmoides genitalium"
+#      threads: 4
+#      report_usage: false
+
+output_dir: "./results"
+threads: 4

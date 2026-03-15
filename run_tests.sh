@@ -89,28 +89,6 @@ done
 
 header "3/4  CLI Check"
 
-# Write a minimal test config that has NO database paths.
-# This avoids the chicken-and-egg problem: the database only exists after
-# the package is installed and the user runs bakta_db download.
-# Database path checks are intentionally deferred to runtime (bactowise run).
-TEST_CONFIG=$(mktemp /tmp/bactowise_test_XXXXXX.yaml)
-cat > "$TEST_CONFIG" << 'YAML'
-tools:
-  - name: prokka
-    version: "1.14.6"
-    runtime: conda
-    params:
-      genus: "Mycoplasma"
-      species: "genitalium"
-  - name: bakta
-    version: "1.9.3"
-    runtime: docker
-    image: "oschwengers/bakta:1.9.3"
-    params: {}
-output_dir: "/tmp/bactowise_test_output"
-threads: 4
-YAML
-
 if command -v bactowise &>/dev/null; then
     if bactowise --help &>/dev/null; then
         ok "bactowise --help works"
@@ -118,10 +96,18 @@ if command -v bactowise &>/dev/null; then
         fail "bactowise --help failed"
     fi
 
-    if bactowise validate -c "$TEST_CONFIG" &>/dev/null; then
-        ok "bactowise validate works (no database path required at build time)"
+    # bactowise init installs the bundled config to ~/.bactowise/config/.
+    # We use --reset so the test is idempotent regardless of prior state.
+    if bactowise init --reset &>/dev/null; then
+        ok "bactowise init --reset works"
     else
-        fail "bactowise validate failed on minimal test config"
+        fail "bactowise init --reset failed"
+    fi
+
+    if bactowise validate &>/dev/null; then
+        ok "bactowise validate works (reads installed config)"
+    else
+        fail "bactowise validate failed on installed config"
     fi
 else
     # CLI not on PATH — fall back to running as a Python module
@@ -132,8 +118,6 @@ else
         fail "bactowise CLI not found on PATH and python -m fallback also failed"
     fi
 fi
-
-rm -f "$TEST_CONFIG"   # clean up temp config
 
 # ── 4. Unit tests ─────────────────────────────────────────────────────────
 

@@ -21,3 +21,9 @@ bactowise = "bactowise.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["bactowise"]
+
+[tool.hatch.build.targets.wheel.sources]
+"bactowise" = "bactowise"
+
+[tool.hatch.build.force-include]
+"bactowise/config/pipeline.yaml" = "bactowise/config/pipeline.yaml"
