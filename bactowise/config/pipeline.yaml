@@ -21,9 +21,8 @@ tools:
         - conda-forge
         - bioconda
         - defaults
-      dependencies: []
-    database:
-      path: "~/.bactowise/databases/checkm"
+      dependencies:
+        - setuptools
     qc_criteria:
       completeness: 95.0
       contamination: 5.0
