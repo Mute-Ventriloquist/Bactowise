@@ -7,7 +7,7 @@ source:
 
 build:
   number: 0
-  script: pip install . --no-deps -vv
+  script: pip install . -vv
   entry_points:
     - bactowise = bactowise.cli:main
 
@@ -21,7 +21,6 @@ requirements:
     - pyyaml >=6.0
     - pydantic >=2.0
     - typer >=0.9
-    - docker-py >=6.0
 
 test:
   script: run_tests.sh
