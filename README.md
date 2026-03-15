@@ -13,31 +13,28 @@ If the genome fails QC thresholds, BactoWise warns you and continues — the sci
 
 ## Setup
 
-### 1. Install a container runtime
+### 1. Install Singularity or Apptainer
 
-Bakta runs inside a container. Use **Singularity/Apptainer** on HPC/SLURM clusters, or **Docker** on a local workstation.
+Bakta runs inside a Singularity container. Singularity and Apptainer are the
+same runtime — Apptainer is the actively maintained community fork and is
+recommended for new installs.
 
-**Singularity / Apptainer (HPC — recommended for SLURM):**
+**On an HPC cluster (most common case):**
 ```bash
-# Most HPC clusters already have it — just load the module:
 module load singularity
-
-# If not available, contact your sysadmin, or install Apptainer locally:
-# https://apptainer.org/docs/admin/main/installation.html
+# or: module load apptainer
 ```
 
-**Docker (local workstation):**
+**On a local workstation (WSL2, Linux):**
 ```bash
-# Mac/Windows: download Docker Desktop from https://docker.com
-# Linux:
-sudo apt install docker.io && sudo systemctl start docker
-sudo usermod -aG docker $USER && newgrp docker
+sudo add-apt-repository -y ppa:apptainer/ppa
+sudo apt update
+sudo apt install -y apptainer
 ```
 
-Set the runtime in `pipeline.yaml` to match what you have:
-```yaml
-- name: bakta
-  runtime: singularity   # or: docker
+Verify it works:
+```bash
+apptainer exec docker://alpine cat /etc/alpine-release
 ```
 
 ### 2. Install BactoWise
@@ -47,9 +44,11 @@ conda build conda_recipe/ -c bioconda -c conda-forge
 conda install --use-local bactowise -c bioconda -c conda-forge
 ```
 
-> **WSL users:** If `conda build` fails, see the [User Guide](DOCS.md#installation).
+> **WSL users:** If `conda build` fails, see the [User Guide](DOCS.md#1-installation).
 
-> **Note — testing a fresh install:** If you want to verify the package in a clean environment (recommended when iterating on the code), wipe and reinstall rather than updating in-place:
+> **Note — testing a fresh install:** To verify the package in a clean
+> environment (recommended when iterating on the code), wipe and reinstall
+> rather than updating in-place:
 > ```bash
 > conda build conda_recipe/ -c bioconda -c conda-forge
 >
@@ -64,23 +63,28 @@ conda install --use-local bactowise -c bioconda -c conda-forge
 ## Running
 
 ```bash
-# Optional but recommended — catch config errors before a long run
-bactowise validate -c pipeline.yaml
-
 # Run the pipeline
 bactowise run -f genome.fasta -c pipeline.yaml
 ```
 
-On first run, BactoWise will automatically download the required databases (~4 GB) and pull the Bakta container image before starting. Results land in `./results/` with subdirectories for each tool.
+On first run, BactoWise will automatically download the required databases
+(~4 GB) and pull the Bakta Singularity image before starting. Results land
+in `./results/` with subdirectories for each tool.
 
-> **Note:** Databases can also be downloaded ahead of time with `bactowise db download`.
-> See the [User Guide](DOCS.md#databases) for individual database options and how to
-> manage existing downloads.
+> **Note:** Databases can also be downloaded ahead of time with
+> `bactowise db download`. See the [User Guide](DOCS.md#2-databases) for
+> details.
 
 **Skip a tool** (e.g. if QC has already been done):
-
 ```bash
 bactowise run -f genome.fasta -c pipeline.yaml --skip checkm
+```
+
+**Bypass annotation with pre-computed GFF files:**
+```bash
+bactowise run -f genome.fasta -c pipeline.yaml \
+  --gff bakta:/path/to/bakta.gff3 \
+  --gff prokka:/path/to/prokka.gff
 ```
 
 ---
@@ -88,4 +92,4 @@ bactowise run -f genome.fasta -c pipeline.yaml --skip checkm
 ## Further reading
 
 - **[User Guide](DOCS.md#user-guide)** — database commands, QC output, flags, troubleshooting
-- **[Developer Guide](DOCS.md#developer-guide)** — pipeline.yaml field reference, how to add a new tool
+- **[Developer Guide](DOCS.md#developer-guide)** — pipeline.yaml field reference, local modifications, how to add a new tool

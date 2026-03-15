@@ -11,7 +11,8 @@
   - [8. Troubleshooting](#8-troubleshooting)
 - [Developer Guide](#developer-guide)
   - [1. pipeline.yaml field reference](#1-pipelineyaml-field-reference)
-  - [2. Adding a new tool](#2-adding-a-new-tool)
+  - [2. Modifying pipeline.yaml locally](#2-modifying-pipelineyaml-locally)
+  - [3. Adding a new tool](#3-adding-a-new-tool)
 
 ---
 
@@ -19,21 +20,38 @@
 
 ## 1. Installation
 
-### Docker
+### Singularity / Apptainer
 
-Bakta runs inside a Docker container. Install Docker Desktop for
-[Mac or Windows](https://docker.com), or on Linux:
+Bakta runs inside a Singularity container. Singularity and Apptainer are the
+same runtime — Apptainer is the actively maintained community fork and is
+recommended for new installs. The two are fully interchangeable; BactoWise
+detects whichever is available on your PATH.
 
+**On an HPC cluster (most common case):**
 ```bash
-sudo apt install docker.io && sudo systemctl start docker
-sudo usermod -aG docker $USER && newgrp docker
+module load singularity
+# or: module load apptainer
 ```
 
-Verify:
+**On a local workstation (WSL2, Linux):**
 ```bash
-docker run hello-world
-# Should print: "Hello from Docker!"
+sudo add-apt-repository -y ppa:apptainer/ppa
+sudo apt update
+sudo apt install -y apptainer
 ```
+
+Verify it works:
+```bash
+apptainer exec docker://alpine cat /etc/alpine-release
+# Should print an Alpine Linux version number
+```
+
+If this step fails with a namespace or kernel error, install the setuid
+variant instead:
+```bash
+sudo apt install -y apptainer-suid
+```
+This is standard on HPC clusters with older kernels and is perfectly safe.
 
 ### BactoWise
 
@@ -113,14 +131,14 @@ smallest known bacterial genomes and annotates quickly.
 
 ### Validate your config
 
-Always run this first after editing `pipeline.yaml`:
+Always run this first before a real annotation job:
 
 ```bash
 bactowise validate -c pipeline.yaml
 ```
 
 This checks that all required fields are present and well-formed without
-starting Docker, creating conda environments, or touching databases.
+invoking Singularity, creating conda environments, or touching databases.
 
 ### Run
 
@@ -130,7 +148,7 @@ bactowise run -f mgenitalium.fasta -c pipeline.yaml
 
 On first run, BactoWise will automatically:
 - Create any missing conda environments (e.g. `checkm_env`, `prokka_env`)
-- Pull any missing Docker images (e.g. `oschwengers/bakta`)
+- Pull the Bakta Singularity image (~500 MB, stored in `~/.bactowise/images/`)
 
 ### Output layout
 
@@ -361,7 +379,7 @@ all available options.
 
 | Error | Fix |
 |---|---|
-| `Cannot connect to Docker` | Open Docker Desktop and wait for the whale 🐳 to stop animating |
+| `singularity: command not found` | Run `module load singularity` or install Apptainer: `sudo apt install -y apptainer` |
 | `Database not found at ~/.bactowise/databases/bakta` | Run `bactowise db download --bakta` |
 | `CheckM database path not found` | Run `bactowise db download --checkm` |
 | `checkm_env not found` | Run `conda create -n checkm_env -c bioconda -c conda-forge checkm-genome=1.2.3 python=3.8 -y` |
@@ -393,7 +411,7 @@ runs. Unknown fields are rejected with a clear error message.
 |---|---|---|---|
 | `name` | string | required | Tool name — must match the binary name for conda tools |
 | `version` | string | required | Expected version — checked at preflight, mismatch warns but does not fail |
-| `runtime` | `conda` \| `docker` | required | How the tool is executed |
+| `runtime` | `conda` \| `singularity` \| `docker` \| `pgap` | required | How the tool is executed |
 | `role` | `qc` \| `annotation` | `annotation` | `qc` tools gate downstream stages and trigger QC warnings |
 | `depends_on` | list[str] | `[]` | Tools that must complete before this one starts |
 | `image` | string | `name:version` | Docker image ref — required for `runtime: docker`, auto-filled if omitted |
@@ -415,7 +433,128 @@ runs. Unknown fields are rejected with a clear error message.
 
 ---
 
-## 2. Adding a new tool
+---
+
+## 2. Modifying pipeline.yaml locally
+
+`pipeline.yaml` is the single file that controls which tools run, which
+versions are used, and what parameters they receive. For most users it
+works out of the box without any edits. The modifications below are
+low-effort and well-tested — each one requires changing only one or two
+lines.
+
+### Relaxing QC thresholds
+
+The default thresholds (completeness > 95%, contamination < 5%) can be
+too strict for some genomes, such as draft assemblies or environmental
+isolates. Adjust them under the `checkm` block:
+
+```yaml
+- name: checkm
+  qc_criteria:
+    completeness: 90.0   # lower if working with difficult genomes
+    contamination: 10.0
+```
+
+BactoWise will warn but continue if either threshold is not met regardless
+of these values — the thresholds control when the warning fires, not
+whether annotation proceeds.
+
+### Changing the number of threads
+
+Each tool picks up its thread count from its own `params` block. To speed
+up a run on a machine with more cores, increase `threads` (or `cpus` for
+Prokka) under each tool:
+
+```yaml
+- name: checkm
+  params:
+    threads: 8
+
+- name: prokka
+  params:
+    cpus: 8
+
+- name: bakta
+  params:
+    threads: 8
+```
+
+### Specifying genus and species for Prokka
+
+Prokka produces better gene naming when it knows the organism. Set `genus`
+and `species` under Prokka's `params` block:
+
+```yaml
+- name: prokka
+  params:
+    genus: "Mycoplasma"
+    species: "genitalium"
+    kingdom: Bacteria
+    cpus: 4
+```
+
+These are passed directly to Prokka as `--genus`, `--species`, and
+`--kingdom` flags. Omitting them is valid — Prokka falls back to its
+general bacterial database.
+
+### Changing the CheckM workflow
+
+CheckM supports two modes. The default (`taxonomy_wf`) is fast and
+requires ~2 GB of database. The more accurate `lineage_wf` requires the
+full ~40 GB database but gives per-lineage marker sets:
+
+```yaml
+- name: checkm
+  params:
+    mode: lineage_wf
+    threads: 4
+```
+
+Download the larger database the same way (`bactowise db download --checkm`)
+and point `database.path` to the same directory — BactoWise runs
+`checkm data setRoot` automatically on every preflight.
+
+### Enabling PGAP
+
+PGAP is included in the config but commented out by default because it
+requires a separate ~30 GB data download. Once you have run `pgap.py --update`,
+uncomment the PGAP block at the bottom of `pipeline.yaml` and set the
+organism name:
+
+```yaml
+  - name: pgap
+    version: "2024-07-18.build7555"
+    runtime: pgap
+    depends_on: [checkm]
+    params:
+      organism: "Mycoplasmoides genitalium"
+      threads: 4
+```
+
+PGAP will then run in parallel with Bakta and Prokka in stage 2.
+
+### Pointing to a custom database location
+
+If you downloaded the Bakta or CheckM databases to a non-default path,
+update the `database.path` for the relevant tool:
+
+```yaml
+- name: bakta
+  database:
+    path: "/scratch/my_project/bakta/db-light"
+    type: light
+
+- name: checkm
+  database:
+    path: "/scratch/my_project/checkm_db"
+```
+
+`bactowise db status` only checks the default location
+(`~/.bactowise/databases/`). Custom paths are verified at runtime when
+you run `bactowise run`.
+
+## 3. Adding a new tool
 
 The pipeline is designed so that adding a new tool requires a config entry and
 — if the tool needs special invocation logic beyond the generic pattern — a new
