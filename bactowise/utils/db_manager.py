@@ -228,11 +228,14 @@ def _bakta_db_download_cmd(dest_dir: Path) -> list[str]:
         if not sif.exists():
             _pull_bakta_sif(singularity_bin, sif)
         print(f"  Using Singularity image: {sif}")
+        # Run via /bin/bash -c so the shell inherits the container's PATH,
+        # making bakta_db available. Matches the approach in Bakta's own docs.
         return [
-            singularity_bin, "run",
+            singularity_bin, "exec",
             "--bind", f"{dest_dir}:/db_output:rw",
             str(sif),
-            "db", "--output", "/db_output", "--type", "light",
+            "/bin/bash", "-c",
+            "bakta_db download --output /db_output --type light",
         ]
 
     # ── Option 2: Docker ─────────────────────────────────────────────────────
@@ -240,11 +243,14 @@ def _bakta_db_download_cmd(dest_dir: Path) -> list[str]:
         image_ref = _bakta_image_ref()
         _ensure_docker_image(image_ref)
         print(f"  Using Docker image: {image_ref}")
+        # Same /bin/bash -c approach as recommended in Bakta's official docs:
+        # docker run -v ... --entrypoint /bin/bash image -c "bakta_db download ..."
         return [
             "docker", "run", "--rm",
             "--volume", f"{dest_dir}:/db_output",
+            "--entrypoint", "/bin/bash",
             image_ref,
-            "db", "--output", "/db_output", "--type", "light",
+            "-c", "bakta_db download --output /db_output --type light",
         ]
 
     # ── Option 3: bakta_db on PATH ────────────────────────────────────────────
