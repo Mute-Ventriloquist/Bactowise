@@ -73,7 +73,7 @@ conda mambabuild --suppress-variables -c conda-forge -c bioconda conda_recipe/
 ## 2. Databases
 
 BactoWise stores all databases under `~/.bactowise/databases/` and manages
-them through the `bactowise db` command. The default `pipeline.yaml` already
+them through the `bactowise db` command. The default configuration already
 points to these paths — no manual edits needed.
 
 ### Download all databases (recommended first step)
@@ -134,16 +134,17 @@ smallest known bacterial genomes and annotates quickly.
 Always run this first before a real annotation job:
 
 ```bash
-bactowise validate -c pipeline.yaml
+bactowise validate
 ```
 
 This checks that all required fields are present and well-formed without
 invoking Singularity, creating conda environments, or touching databases.
+It reads from `~/.bactowise/config/pipeline.yaml` automatically.
 
 ### Run
 
 ```bash
-bactowise run -f mgenitalium.fasta -c pipeline.yaml
+bactowise run -f mgenitalium.fasta
 ```
 
 On first run, BactoWise will automatically:
@@ -176,14 +177,14 @@ results/
 ## 4. Skipping tools
 
 Use `--skip` to exclude a tool from a run without editing the config file.
-The flag accepts any tool name defined in `pipeline.yaml` and can be repeated.
+The flag accepts any tool name defined in the active config and can be repeated.
 
 ```bash
 # Skip QC if the genome has already been assessed
-bactowise run -f genome.fasta -c pipeline.yaml --skip checkm
+bactowise run -f genome.fasta --skip checkm
 
 # Skip both annotation tools and run QC only
-bactowise run -f genome.fasta -c pipeline.yaml --skip prokka --skip bakta
+bactowise run -f genome.fasta --skip prokka --skip bakta
 ```
 
 **What happens when you skip a tool:**
@@ -220,7 +221,7 @@ a clear error before anything runs.
 
 This policy exists to keep results consistent. Providing all files or none
 ensures each run tells a coherent story. When you add PGAP to your pipeline
-by uncommenting its block in `pipeline.yaml`, the required set automatically
+by uncommenting its block in the installed config, the required set automatically
 grows to three. BactoWise derives the required set from the active tools at
 runtime — no other configuration change is needed.
 
@@ -228,18 +229,18 @@ runtime — no other configuration change is needed.
 
 ```bash
 # Bypass stage 2 — provide GFF for all annotation tools
-bactowise run -f genome.fasta -c pipeline.yaml \
+bactowise run -f genome.fasta \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff
 ```
 
 Each `--gff` flag takes the format `tool:path`. The tool name must match the
-name in `pipeline.yaml` exactly (e.g. `bakta`, `prokka`, `pgap`).
+name in the active config exactly (e.g. `bakta`, `prokka`, `pgap`).
 
 You can also combine `--gff` with `--skip checkm` to bypass both stages:
 
 ```bash
-bactowise run -f genome.fasta -c pipeline.yaml \
+bactowise run -f genome.fasta \
   --skip checkm \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff
@@ -307,7 +308,7 @@ results/
 If either threshold is not met, BactoWise prints a warning and continues.
 Annotation results should be interpreted with caution for low-quality assemblies.
 
-QC thresholds can be adjusted in `pipeline.yaml`:
+QC thresholds can be adjusted in the installed config (`~/.bactowise/config/pipeline.yaml`):
 
 ```yaml
 - name: checkm
@@ -394,7 +395,7 @@ all available options.
 
 ## 1. pipeline.yaml field reference
 
-Every tool block in `pipeline.yaml` is validated by Pydantic before anything
+Every tool block in the config is validated by Pydantic before anything
 runs. Unknown fields are rejected with a clear error message.
 
 ### Top-level fields

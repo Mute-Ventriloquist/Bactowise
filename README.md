@@ -64,7 +64,7 @@ conda install --use-local bactowise -c bioconda -c conda-forge
 
 ```bash
 # Run the pipeline
-bactowise run -f genome.fasta -c pipeline.yaml
+bactowise run -f genome.fasta
 ```
 
 On first run, BactoWise will automatically download the required databases
@@ -77,12 +77,12 @@ in `./results/` with subdirectories for each tool.
 
 **Skip a tool** (e.g. if QC has already been done):
 ```bash
-bactowise run -f genome.fasta -c pipeline.yaml --skip checkm
+bactowise run -f genome.fasta --skip checkm
 ```
 
 **Bypass annotation with pre-computed GFF files:**
 ```bash
-bactowise run -f genome.fasta -c pipeline.yaml \
+bactowise run -f genome.fasta \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff
 ```
