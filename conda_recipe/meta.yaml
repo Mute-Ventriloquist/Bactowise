@@ -21,7 +21,9 @@ requirements:
     - pyyaml >=6.0
     - pydantic >=2.0
     - typer >=0.9
-    - bioconda::bakta
+    # docker-py is intentionally absent here — it is installed via pip in the
+    # build script (see pyproject.toml) to avoid urllib3 conflicts in conda's
+    # solver on some platforms.
 
 test:
   script: run_tests.sh

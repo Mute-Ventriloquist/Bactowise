@@ -1,8 +1,12 @@
 # pyproject.toml
 #
-# This file handles both pip and conda installs.
-# - conda build: uses meta.yaml for conda-managed deps, pip installs the package itself
-# - direct pip install: pip resolves all dependencies listed here
+# This file is NOT for distributing bactowise via pip.
+# It exists solely so that "pip install . --no-deps" works during conda build.
+# Users install bactowise via conda, not pip.
+#
+# docker-py is intentionally managed here via pip rather than conda.
+# conda's solver hits urllib3 version conflicts with docker-py on some
+# platforms. Letting pip install it avoids that entirely.
 
 [build-system]
 requires = ["hatchling"]
@@ -13,7 +17,6 @@ name = "bactowise"
 version = "0.1.0"
 requires-python = ">=3.10"
 
-# docker is managed by pip (not conda) to avoid urllib3 conflicts in conda-build
 dependencies = [
     "docker>=6.0",
 ]

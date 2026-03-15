@@ -39,11 +39,13 @@ CHECKM_DB_URL = (
 # two that are always present — genome_tree/ and hmms/ — using both to
 # reduce the chance of a false positive from a partial extraction.
 _CHECKM_MARKERS = ["genome_tree", "hmms", "pfam"]
-# bakta_db creates a db-light/ subdirectory inside the --output path.
-# The actual database root is therefore bakta/db-light/, and db.json
-# lives inside that subdirectory.
-_BAKTA_SUBDIR   = "db-light"
-_BAKTA_MARKER   = "bakta.db"
+
+# Bakta: bakta_db creates a db-light/ subdir inside --output; the database
+# itself is confirmed by the presence of bakta.db inside db-light/.
+_BAKTA_SUBDIR    = "db-light"
+_BAKTA_MARKER    = "bakta.db"
+
+
 
 
 # ── Public helpers ─────────────────────────────────────────────────────────────
@@ -155,18 +157,21 @@ def download_checkm(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Pat
 
 def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path:
     """
-    Download the Bakta light database using the `bakta_db` CLI tool.
+    Download the Bakta light database using bakta_db.
 
-    `bakta_db` is installed as a run dependency of bactowise (via meta.yaml)
-    so it is always available on PATH when bactowise is active.
+    Since Bakta runs inside a Singularity container (not installed in the
+    BactoWise conda environment), bakta_db is invoked in one of two ways:
+
+    1. Via the Bakta Singularity SIF — preferred, and works even if bakta is
+       not installed as a conda package.
+    2. Via bakta_db on PATH — fallback for Docker-based setups where bakta
+       is installed in the active conda environment.
 
     Parameters
     ----------
     force   : re-download even if the database appears complete
     db_root : parent directory for all BactoWise databases
     """
-    # dest_dir is the parent we pass to bakta_db --output.
-    # bakta_db will create db-light/ inside it automatically.
     dest_dir = db_root / "bakta"
     dest     = bakta_db_path(db_root)   # db-light/ inside dest_dir
 
@@ -181,37 +186,175 @@ def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path
 
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    # Confirm bakta_db is available before attempting download
-    if not shutil.which("bakta_db"):
-        raise RuntimeError(
-            "  ✗  'bakta_db' not found on PATH.\n"
-            "     Make sure bactowise is installed in your active conda environment:\n"
-            "       conda activate <your-bactowise-env>\n"
-            "     Then retry: bactowise db download --bakta"
-        )
+    cmd = _bakta_db_download_cmd(dest_dir)
 
     print(f"\n  Downloading Bakta database (light, ~2 GB) → {dest}")
-    cmd = ["bakta_db", "download", "--output", str(dest_dir), "--type", "light"]
     print(f"  Running: {' '.join(cmd)}\n")
 
     result = subprocess.run(cmd, text=True)
 
     if result.returncode != 0:
         raise RuntimeError(
-            f"  ✗  bakta_db download failed (exit {result.returncode}).\n"
-            f"     Check the output above for details."
+            f"bakta_db download failed (exit {result.returncode}).\n"
+            f"Check the output above for details."
         )
 
     if not is_bakta_present(db_root):
         raise RuntimeError(
-            f"  ✗  Bakta download appeared to succeed but the expected marker "
-            f"file (db.json) was not found inside {dest}.\n"
-            f"     The bakta_db output structure may have changed. "
-            f"Please report this at https://github.com/your-org/bactowise/issues"
+            f"Bakta download appeared to succeed but {_BAKTA_MARKER} was not "
+            f"found inside {dest}.\n"
+            f"The bakta_db output structure may have changed."
         )
 
     print(f"\n  ✓  Bakta database ready at: {dest}\n")
     return dest
+
+
+def _bakta_db_download_cmd(dest_dir: Path) -> list[str]:
+    """
+    Build the command to run bakta_db download.
+
+    Tries in order:
+    1. Singularity/Apptainer + bakta SIF — pulls the SIF automatically if missing.
+    2. Docker + bakta image — pulls the image automatically if missing.
+    3. bakta_db on PATH — fallback for conda-based setups.
+
+    Raises RuntimeError if none of the above are available.
+    """
+    # ── Option 1: Singularity/Apptainer ──────────────────────────────────────
+    singularity_bin = shutil.which("singularity") or shutil.which("apptainer")
+    if singularity_bin:
+        sif = _bakta_sif_path()
+        if not sif.exists():
+            _pull_bakta_sif(singularity_bin, sif)
+        print(f"  Using Singularity image: {sif}")
+        return [
+            singularity_bin, "run",
+            "--bind", f"{dest_dir}:/db_output:rw",
+            str(sif),
+            "db", "--output", "/db_output", "--type", "light",
+        ]
+
+    # ── Option 2: Docker ─────────────────────────────────────────────────────
+    if shutil.which("docker"):
+        image_ref = _bakta_image_ref()
+        _ensure_docker_image(image_ref)
+        print(f"  Using Docker image: {image_ref}")
+        return [
+            "docker", "run", "--rm",
+            "--volume", f"{dest_dir}:/db_output",
+            image_ref,
+            "db", "--output", "/db_output", "--type", "light",
+        ]
+
+    # ── Option 3: bakta_db on PATH ────────────────────────────────────────────
+    if shutil.which("bakta_db"):
+        return ["bakta_db", "download", "--output", str(dest_dir), "--type", "light"]
+
+    # ── Nothing available ─────────────────────────────────────────────────────
+    raise RuntimeError(
+        "Cannot download Bakta database — no container runtime found.\n\n"
+        "Option A (Singularity/Apptainer — recommended for HPC):\n"
+        "  sudo add-apt-repository -y ppa:apptainer/ppa\n"
+        "  sudo apt update && sudo apt install apptainer\n"
+        "  bactowise db download --bakta\n\n"
+        "Option B (Docker — for local workstations):\n"
+        "  Install Docker Desktop from https://docker.com\n"
+        "  bactowise db download --bakta\n\n"
+        "Option C (conda):\n"
+        "  conda install -c bioconda bakta\n"
+        "  bactowise db download --bakta"
+    )
+
+
+def _bakta_image_ref() -> str:
+    """
+    Read the Bakta image reference from the bundled pipeline.yaml.
+
+    This is the single source of truth for the Bakta version — updating
+    bactowise/config/pipeline.yaml is the only change needed when bumping
+    the Bakta version.
+    """
+    import yaml
+    from bactowise.utils.config_manager import bundled_config_path
+    config = yaml.safe_load(bundled_config_path().read_text())
+    for tool in config.get("tools", []):
+        if tool.get("name") == "bakta":
+            image = tool.get("image")
+            if image:
+                return image
+    raise RuntimeError(
+        "Could not find bakta image reference in bundled pipeline.yaml. "
+        "The bundled config may be malformed."
+    )
+
+
+def _pull_bakta_sif(singularity_bin: str, sif: Path) -> None:
+    """
+    Pull the Bakta Docker image as a SIF file.
+    Called automatically by _bakta_db_download_cmd when the SIF is missing.
+    """
+    image_ref = _bakta_image_ref()
+    uri       = f"docker://{image_ref}"
+
+    sif.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n  Bakta SIF not found — pulling image first.")
+    print(f"  Source : {uri}")
+    print(f"  Dest   : {sif}")
+    print(f"  This is a one-time step and may take several minutes.\n")
+
+    result = subprocess.run(
+        [singularity_bin, "pull", str(sif), uri],
+        text=True,
+    )
+
+    if result.returncode != 0 or not sif.exists():
+        sif.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Failed to pull Bakta Singularity image.\n"
+            f"Try manually: {singularity_bin} pull {sif} {uri}"
+        )
+
+    print(f"\n  ✓  Bakta SIF pulled: {sif}")
+
+
+def _bakta_sif_path() -> Path:
+    """
+    Return the expected local path of the Bakta SIF file, derived from the
+    image reference in the bundled pipeline.yaml.
+
+    oschwengers/bakta:v1.12.0 → ~/.bactowise/images/oschwengers_bakta_v1.12.0.sif
+    """
+    safe_name = _bakta_image_ref().replace("/", "_").replace(":", "_")
+    return Path("~/.bactowise/images").expanduser() / f"{safe_name}.sif"
+
+
+def _ensure_docker_image(image_ref: str) -> None:
+    """
+    Pull the Bakta Docker image if it is not already present locally.
+    """
+    # Check if the image exists locally without making a network call
+    check = subprocess.run(
+        ["docker", "image", "inspect", image_ref],
+        capture_output=True,
+        text=True,
+    )
+    if check.returncode == 0:
+        print(f"  Docker image already present: {image_ref}")
+        return
+
+    print(f"\n  Bakta Docker image not found — pulling now.")
+    print(f"  Image : {image_ref}")
+    print(f"  This is a one-time step and may take several minutes.\n")
+
+    result = subprocess.run(["docker", "pull", image_ref], text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to pull Bakta Docker image: {image_ref}\n"
+            f"Make sure Docker is running and try again."
+        )
+    print(f"\n  ✓  Docker image pulled: {image_ref}")
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
