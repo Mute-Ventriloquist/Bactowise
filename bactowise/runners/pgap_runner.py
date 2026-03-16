@@ -108,21 +108,15 @@ class PGAPRunner(BaseRunner):
         return _DEFAULT_PGAP_DATA_DIR
 
     def _check_data_dir(self, data_dir: Path) -> None:
-        if not data_dir.exists() or not any(data_dir.iterdir()):
+        from bactowise.utils.db_manager import is_pgap_present
+        if not is_pgap_present(data_dir):
             raise RuntimeError(
                 f"  ✗  PGAP supplemental data not found at: {data_dir}\n"
                 f"     Run once to download (~30 GB):\n"
-                f"       pgap.py --update\n"
+                f"       bactowise db download --pgap\n"
                 f"     Or set a custom path in pipeline.yaml:\n"
                 f"       params:\n"
                 f"         pgap_input_dir: /path/to/pgap/data"
-            )
-        marker = data_dir / _PGAP_DATA_MARKER
-        if not marker.exists():
-            raise RuntimeError(
-                f"  ✗  PGAP data directory exists at {data_dir} but appears incomplete.\n"
-                f"     Re-run to finish the download:\n"
-                f"       pgap.py --update"
             )
         print(f"  ✓  PGAP data directory found: {data_dir}")
 

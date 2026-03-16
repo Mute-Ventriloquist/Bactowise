@@ -46,9 +46,10 @@ _CHECKM_MARKERS = ["genome_tree", "hmms", "pfam"]
 _BAKTA_SUBDIR    = "db-light"
 _BAKTA_MARKER    = "bakta.db"
 
-# PGAP: pgap.py --update downloads to ~/.pgap/ by default. The build_number
-# file is written on every successful update and serves as the completion marker.
-_DEFAULT_PGAP_DATA_DIR = Path("~/.bactowise/databases/pgap").expanduser()
+# PGAP: pgap.py --update downloads to ~/.pgap/ by default. It creates a
+# versioned subdirectory input-VERSION.BUILD/ inside PGAP_INPUT_DIR.
+# We confirm presence by checking for any such subdirectory.
+_DEFAULT_PGAP_DATA_DIR = Path("~/.pgap").expanduser()
 _PGAP_BIN_DIR          = Path("~/.bactowise/bin").expanduser()
 _PGAP_WRAPPER_URL      = "https://github.com/ncbi/pgap/raw/prod/scripts/pgap.py"
 _PGAP_DATA_MARKER      = "build_number"
@@ -86,8 +87,12 @@ def pgap_data_dir(data_dir: Path = _DEFAULT_PGAP_DATA_DIR) -> Path:
 
 def is_pgap_present(data_dir: Path = _DEFAULT_PGAP_DATA_DIR) -> bool:
     """Return True if PGAP supplemental data appears complete.
-    Checks for the build_number marker file written by pgap.py --update."""
-    return (data_dir / _PGAP_DATA_MARKER).exists()
+    pgap.py --update creates a versioned input-VERSION.BUILD/ subdirectory.
+    We confirm presence by checking that at least one such directory exists."""
+    if not data_dir.exists():
+        return False
+    import glob
+    return bool(glob.glob(str(data_dir / "input-*.build*")))
 
 
 # ── Download orchestration ─────────────────────────────────────────────────────
@@ -261,6 +266,8 @@ def download_pgap(force: bool = False, data_dir: Path = _DEFAULT_PGAP_DATA_DIR) 
     print(f"\n  Downloading PGAP supplemental data (~30 GB) → {data_dir}")
     print(f"  This is a one-time step and will take a while.\n")
 
+    # Set PGAP_INPUT_DIR so pgap.py downloads to our managed location.
+    # pgap.py respects this env var as of its 2022 release.
     import os
     env = {**os.environ, "PGAP_INPUT_DIR": str(data_dir)}
 
