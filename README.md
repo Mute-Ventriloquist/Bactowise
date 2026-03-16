@@ -58,26 +58,6 @@ conda install --use-local bactowise -c bioconda -c conda-forge
 > conda install --use-local bactowise -c bioconda -c conda-forge
 > ```
 
-### 3. Download databases
-
-**Core databases (~4 GB):**
-```bash
-bactowise db download
-```
-Downloads CheckM (~2 GB) and Bakta (~2 GB). The Bakta Singularity image
-(~500 MB) is pulled automatically on first run.
-
-**PGAP supplemental data (~30 GB):**
-```bash
-bactowise db download --pgap
-```
-PGAP runs as part of every `bactowise run`. Its supplemental data must be
-downloaded before the first run. This is a large one-time download — plan
-for ~30 GB of storage and ~100 GB of total working space during a PGAP job.
-`pgap.py` is downloaded automatically as part of this step.
-
-See the [User Guide](DOCS.md#2-databases) for full details.
-
 ---
 
 ## Running
@@ -86,10 +66,17 @@ See the [User Guide](DOCS.md#2-databases) for full details.
 bactowise run -f genome.fasta
 ```
 
-Results land in `./results/` with subdirectories for each tool. On first run,
-BactoWise automatically creates missing conda environments, pulls the Bakta
-Singularity image, and downloads any missing databases — including PGAP if it
-has not been downloaded yet.
+On first run, BactoWise automatically sets up everything it needs — conda
+environments, container images, and all required databases. Just run it.
+
+> **Storage and compute requirements:** The full pipeline requires downloading
+> approximately ~34 GB of database files on first run (~2 GB CheckM, ~2 GB
+> Bakta, ~30 GB PGAP). During a run, PGAP requires up to ~100 GB of working
+> space. Databases can also be downloaded ahead of time with
+> `bactowise db download` and `bactowise db download --pgap` — see the
+> [User Guide](DOCS.md#2-databases) for details.
+
+Results land in `./results/` with subdirectories for each tool.
 
 **Skip a tool** (e.g. if QC has already been done, or to skip PGAP for a quick run):
 ```bash
