@@ -3,10 +3,8 @@
 Assess bacterial genome quality and annotate genes — one command, one config file.
 
 ```
-Stage 1:  CheckM                    → completeness & contamination check
-Stage 2:  Prokka + Bakta + PGAP*    → gene annotation (run in parallel)
-
-* PGAP is optional — see setup below.
+Stage 1:  CheckM                 → completeness & contamination check
+Stage 2:  Prokka + Bakta + PGAP  → gene annotation (run in parallel)
 ```
 
 If the genome fails QC thresholds, BactoWise warns you and continues — the scientist makes the final call.
@@ -62,19 +60,23 @@ conda install --use-local bactowise -c bioconda -c conda-forge
 
 ### 3. Download databases
 
-**Core databases (~4 GB, required):**
+**Core databases (~4 GB):**
 ```bash
 bactowise db download
 ```
 Downloads CheckM (~2 GB) and Bakta (~2 GB). The Bakta Singularity image
 (~500 MB) is pulled automatically on first run.
 
-**PGAP supplemental data (~30 GB, optional):**
+**PGAP supplemental data (~30 GB):**
 ```bash
 bactowise db download --pgap
 ```
-Only needed if you want to run PGAP annotation. This is a large one-time
-download — plan accordingly. See the [User Guide](DOCS.md#2-databases) for details.
+PGAP runs as part of every `bactowise run`. Its supplemental data must be
+downloaded before the first run. This is a large one-time download — plan
+for ~30 GB of storage and ~100 GB of total working space during a PGAP job.
+`pgap.py` is downloaded automatically as part of this step.
+
+See the [User Guide](DOCS.md#2-databases) for full details.
 
 ---
 
@@ -84,25 +86,25 @@ download — plan accordingly. See the [User Guide](DOCS.md#2-databases) for det
 bactowise run -f genome.fasta
 ```
 
-Results land in `./results/` with subdirectories for each tool.
+Results land in `./results/` with subdirectories for each tool. On first run,
+BactoWise automatically creates missing conda environments, pulls the Bakta
+Singularity image, and downloads any missing databases — including PGAP if it
+has not been downloaded yet.
 
-**Skip a tool** (e.g. if QC has already been done):
+**Skip a tool** (e.g. if QC has already been done, or to skip PGAP for a quick run):
 ```bash
 bactowise run -f genome.fasta --skip checkm
+bactowise run -f genome.fasta --skip pgap
 ```
 
 **Bypass annotation with pre-computed GFF files:**
+
+Must provide GFF for all three annotation tools (Prokka, Bakta, PGAP) or none:
 ```bash
-# With 3 annotation tools active (prokka + bakta + pgap):
 bactowise run -f genome.fasta \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff \
   --gff pgap:/path/to/pgap.gff
-
-# With 2 annotation tools (prokka + bakta only):
-bactowise run -f genome.fasta \
-  --gff bakta:/path/to/bakta.gff3 \
-  --gff prokka:/path/to/prokka.gff
 ```
 
 ---

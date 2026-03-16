@@ -76,10 +76,13 @@ BactoWise stores all databases under `~/.bactowise/databases/` and manages
 them through the `bactowise db` command. The default configuration already
 points to these paths — no manual edits needed.
 
-### Core databases (~4 GB, required)
+### Required databases
 
-Download CheckM and Bakta before your first run:
+BactoWise runs three annotation tools by default — Prokka, Bakta, and PGAP.
+All three require their databases to be present before `bactowise run` can
+proceed. A missing database for any active tool is flagged as an error.
 
+**CheckM + Bakta (~4 GB combined):**
 ```bash
 bactowise db download
 ```
@@ -91,32 +94,29 @@ Downloads:
 The Bakta Singularity image (~500 MB) is pulled automatically during preflight
 on first run — no separate step needed.
 
-### PGAP supplemental data (~30 GB, optional)
-
-PGAP requires a large supplemental data download. This is only needed if you
-intend to use PGAP annotation. Because of its size, it is **not** included in
-`bactowise db download` by default — you must request it explicitly:
-
+**PGAP supplemental data (~30 GB):**
 ```bash
 bactowise db download --pgap
 ```
 
-This downloads the PGAP supplemental data to `~/.bactowise/databases/pgap/`
-and also downloads `pgap.py` (the PGAP wrapper script) to
-`~/.bactowise/bin/pgap.py` automatically. The only external requirement is
-that Singularity or Docker is available on PATH — pgap.py manages the PGAP
-container image internally.
+PGAP is part of every standard `bactowise run`. Its supplemental data must be
+downloaded before the first run. Because of its size it is not bundled with
+the core download — you must request it with `--pgap`. This command also
+downloads `pgap.py` to `~/.bactowise/bin/pgap.py` automatically.
 
 > **Disk space:** Plan for ~30 GB of storage for the PGAP data, plus ~100 GB
 > of total working space when a PGAP job is running. The download itself
 > takes significant time depending on your network.
+
+If you want to run BactoWise without PGAP, use `--skip pgap` at runtime
+rather than omitting the database download.
 
 ### Download individual databases
 
 ```bash
 bactowise db download --checkm   # CheckM only
 bactowise db download --bakta    # Bakta only
-bactowise db download --pgap     # PGAP only (~30 GB, explicit opt-in)
+bactowise db download --pgap     # PGAP only (~30 GB)
 ```
 
 ### Force re-download
@@ -138,11 +138,10 @@ This shows the status of all databases at their default locations:
 ```
 ✓  CheckM  → ~/.bactowise/databases/checkm
 ✓  Bakta   → ~/.bactowise/databases/bakta/db-light
-–  PGAP    → ~/.bactowise/databases/pgap  (optional, ~30 GB)
+✓  PGAP    → ~/.bactowise/databases/pgap
 ```
 
-The `–` for PGAP indicates it is optional — a missing PGAP database is not
-flagged as an error unless PGAP is active in your config.
+A missing database for any active tool is flagged as an error at preflight.
 
 ### Interrupted downloads
 
@@ -189,7 +188,10 @@ bactowise run -f mgenitalium.fasta
 On first run, BactoWise will automatically:
 - Create any missing conda environments (e.g. `checkm_env`, `prokka_env`)
 - Pull the Bakta Singularity image (~500 MB, stored in `~/.bactowise/images/`)
-- Download the PGAP supplemental data if PGAP is active in your config and the data is missing
+- Attempt to download any missing databases — however, because the PGAP
+  download is ~30 GB it is strongly recommended to run
+  `bactowise db download --pgap` explicitly before your first run rather
+  than relying on the automatic download.
 
 ### Output layout
 
@@ -232,11 +234,11 @@ The flag accepts any tool name defined in the active config and can be repeated.
 # Skip QC if the genome has already been assessed
 bactowise run -f genome.fasta --skip checkm
 
-# Skip both annotation tools and run QC only (2-tool config)
-bactowise run -f genome.fasta --skip prokka --skip bakta
-
-# Skip PGAP but run everything else (when PGAP is active in config)
+# Skip PGAP for a faster run (Prokka and Bakta still run)
 bactowise run -f genome.fasta --skip pgap
+
+# Skip all annotation and run QC only
+bactowise run -f genome.fasta --skip prokka --skip bakta --skip pgap
 ```
 
 **What happens when you skip a tool:**
@@ -272,15 +274,15 @@ others use pre-computed files — is not permitted and will be rejected with
 a clear error before anything runs.
 
 This policy exists to keep results consistent. Providing all files or none
-ensures each run tells a coherent story. When you add PGAP to your pipeline
-by uncommenting its block in the installed config, the required set automatically
-grows to three. BactoWise derives the required set from the active tools at
-runtime — no other configuration change is needed.
+ensures each run tells a coherent story. BactoWise runs Prokka, Bakta, and
+PGAP by default — meaning three GFF files are always required for a bypass
+unless one or more tools are excluded with `--skip`. BactoWise derives the
+required set from the active (non-skipped) tools at runtime.
 
 ### Usage
 
-The number of `--gff` flags required depends on how many annotation tools are
-active in your config. With Prokka + Bakta + PGAP all active:
+Since BactoWise runs Prokka, Bakta, and PGAP by default, all three GFF files
+are required for a bypass:
 
 ```bash
 bactowise run -f genome.fasta \
@@ -289,10 +291,13 @@ bactowise run -f genome.fasta \
   --gff pgap:/path/to/pgap.gff
 ```
 
-With Prokka + Bakta only (PGAP commented out):
+If you want to bypass only Prokka and Bakta and let PGAP run normally,
+that is not allowed — it violates the all-or-nothing rule. Instead, use
+`--skip pgap` together with the two GFF files:
 
 ```bash
 bactowise run -f genome.fasta \
+  --skip pgap \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff
 ```
@@ -336,10 +341,10 @@ results/
 
 ### Error cases caught before anything runs
 
-**Partial bypass (missing tools):**
+**Partial bypass (missing a tool):**
 ```
 ✗ GFF files must be provided for ALL annotation tools or NONE.
-  Missing : pgap, prokka
+  Missing : pgap
   Annotation tools in this config: bakta, pgap, prokka
 ```
 
@@ -457,8 +462,8 @@ all available options.
 | `bactowise: command not found` | Run `conda activate <your-env>` first |
 | CheckM fails silently | Check `results/checkm/logs/checkm.log` |
 | Download interrupted | Re-run the same `bactowise db download` command — partial downloads are detected automatically |
-| `pgap.py not found` | Run `bactowise db download --pgap` — this downloads pgap.py automatically |
-| `PGAP supplemental data not found` | Run `bactowise db download --pgap` (~30 GB, one-time) |
+| `pgap.py not found` | Run `bactowise db download --pgap` — this downloads pgap.py and the supplemental data automatically |
+| `PGAP supplemental data not found` | Run `bactowise db download --pgap` (~30 GB). This is required for every standard run — use `--skip pgap` if you want to run without it. |
 | PGAP fails with cgroups error | This is a VM/HPC kernel issue with CPU limits. It is handled automatically — BactoWise does not pass `-c` to pgap.py. If it still occurs, check `results/pgap/run_<timestamp>/cwltool.log` |
 | PGAP fails with exit code 255 | Check `results/pgap/run_<timestamp>/cwltool.log` for the detailed Singularity error |
 | `No module named 'pkg_resources'` (CheckM) | Delete `checkm_env` and rerun: `conda env remove -n checkm_env -y && bactowise run -f genome.fasta` |
@@ -590,25 +595,12 @@ Download the larger database the same way (`bactowise db download --checkm`)
 and point `database.path` to the same directory — BactoWise runs
 `checkm data setRoot` automatically on every preflight.
 
-### Enabling PGAP
+### Adjusting the PGAP organism name
 
-PGAP is included in the config but commented out by default because it
-requires a large ~30 GB data download and ~100 GB working space. To enable it:
-
-**Step 1 — Download the PGAP supplemental data:**
-```bash
-bactowise db download --pgap
-```
-This automatically downloads `pgap.py` to `~/.bactowise/bin/` and the
-supplemental data to `~/.bactowise/databases/pgap/`. The only external
-requirement is Singularity or Docker on PATH.
-
-**Step 2 — Uncomment the PGAP block in your installed config:**
-```bash
-nano ~/.bactowise/config/pipeline.yaml
-```
-Find the commented PGAP section near the bottom and uncomment it, setting
-the organism name for your genome:
+PGAP requires an organism name to produce correctly labelled annotations.
+The default config sets this to `Mycoplasmoides genitalium` for the test
+genome. For your own genomes, update the `organism` field in the PGAP block
+of `~/.bactowise/config/pipeline.yaml`:
 
 ```yaml
   - name: pgap
@@ -616,17 +608,18 @@ the organism name for your genome:
     runtime: pgap
     depends_on: [checkm]
     params:
-      organism: "Mycoplasmoides genitalium"
-      threads: 4
+      organism: "Your genus species"
       report_usage: false
 ```
 
-PGAP will then run in parallel with Bakta and Prokka in stage 2.
+Use the genus and species name. PGAP passes this to its internal taxonomic
+lookup — it does not need to be an exact NCBI taxonomy match for the
+annotation to run, but a close match produces better results.
 
 > **Note on CPU limits:** BactoWise does not pass a CPU limit to pgap.py
 > because doing so causes a cgroups error on some cloud VMs and HPC nodes.
 > PGAP will use all available CPUs by default. If you need to limit resource
-> usage, run the full pipeline with `--skip pgap` and invoke pgap.py manually.
+> usage, use `--skip pgap` and invoke pgap.py manually for that step.
 
 ### Pointing to a custom database location
 
