@@ -110,20 +110,21 @@ class CheckMRunner(CondaToolRunner):
 
         print(f"\n  ✓  Conda env '{env_name}' created successfully.")
 
-        # CheckM 1.2.3 imports pkg_resources at startup. conda-forge's setuptools
-        # noarch package does not always include pkg_resources correctly.
-        # --force-reinstall overwrites the conda-installed setuptools with pip's
-        # version, which always ships pkg_resources.
+        # CheckM 1.2.3 imports pkg_resources at startup but conda-forge's
+        # setuptools noarch package does not reliably include it.
+        # We call the env's Python binary directly (not via conda run) to
+        # guarantee pip installs into the correct site-packages directory.
+        python_bin = Path(conda_root) / "envs" / env_name / "bin" / "python"
         print(f"  Installing pkg_resources fix for CheckM...")
-        pip_cmd = [
-            conda_bin, "run", "--no-capture-output", "-n", env_name,
-            "pip", "install", "--force-reinstall", "--quiet", "setuptools",
-        ]
-        pip_result = subprocess.run(pip_cmd, text=True)
+        pip_result = subprocess.run(
+            [str(python_bin), "-m", "pip", "install",
+             "--force-reinstall", "--quiet", "setuptools"],
+            text=True,
+        )
         if pip_result.returncode != 0:
             print(
                 f"  ⚠  pip install setuptools failed — CheckM may fail at runtime.\n"
-                f"     Fix manually: conda run -n {env_name} pip install setuptools"
+                f"     Fix manually: {python_bin} -m pip install --force-reinstall setuptools"
             )
         else:
             print(f"  ✓  pkg_resources available.")
