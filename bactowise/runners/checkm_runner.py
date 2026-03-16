@@ -156,20 +156,22 @@ class CheckMRunner(CondaToolRunner):
         if not db_path.exists():
             raise RuntimeError(
                 f"  ✗  CheckM database path not found: {db_path}\n"
-                f"     Download it first:\n"
-                f"       mkdir -p {db_path}\n"
-                f"       cd {db_path}\n"
-                f"       wget https://data.ace.uq.edu.au/public/CheckM_databases/checkm_data_2015_01_16.tar.gz\n"
-                f"       tar -xzf checkm_data_2015_01_16.tar.gz"
+                f"     Run: bactowise db download --checkm"
             )
 
         cmd = self._conda_run_cmd(["data", "setRoot", str(db_path)])
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,   # merge stderr into stdout
+            text=True,
+        )
+        combined = result.stdout.strip()
 
         if result.returncode != 0:
             raise RuntimeError(
                 f"  ✗  Failed to configure CheckM database root.\n"
-                f"     Error: {result.stderr.strip()}\n"
+                f"     Output: {combined}\n"
                 f"     Try manually: conda run -n {self.config.conda_env.name} "
                 f"checkm data setRoot {db_path}"
             )
