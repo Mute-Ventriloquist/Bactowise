@@ -21,8 +21,7 @@ tools:
         - conda-forge
         - bioconda
         - defaults
-      dependencies:
-        - setuptools
+      dependencies: []
     qc_criteria:
       completeness: 95.0
       contamination: 5.0
