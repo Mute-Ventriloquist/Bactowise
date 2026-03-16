@@ -8,14 +8,9 @@ from pathlib import Path
 from bactowise.models.config import ToolConfig
 from bactowise.runners.base import BaseRunner
 
-# PGAP stores its supplemental data here by default.
-# Can be overridden by setting PGAP_INPUT_DIR in the environment,
-# or by passing pgap_input_dir in the tool's params block.
-_DEFAULT_PGAP_DATA_DIR = Path("~/.pgap").expanduser()
-
-# Marker file that confirms pgap.py --update has completed successfully.
-# PGAP extracts a build-stamped yaml into its data dir on every update.
-_PGAP_DATA_MARKER = "build_number"
+# PGAP data dir and marker are defined in db_manager to ensure a single
+# source of truth. pgap_runner imports them rather than redefining them.
+from bactowise.utils.db_manager import _DEFAULT_PGAP_DATA_DIR, _PGAP_DATA_MARKER
 
 
 class PGAPRunner(BaseRunner):
@@ -32,16 +27,13 @@ class PGAPRunner(BaseRunner):
       - The fasta and organism name are passed directly as CLI flags.
         No submol.yaml or input.yaml is required for basic annotation.
 
-    Prerequisites (one-time, done outside BactoWise):
-      1. Download pgap.py and make it executable:
-           curl -OL https://github.com/ncbi/pgap/raw/prod/scripts/pgap.py
-           chmod +x pgap.py
-           mv pgap.py /usr/local/bin/   # or anywhere on PATH
-
-      2. Download the supplemental data (~30 GB):
-           pgap.py --update
-
-      3. Ensure Docker or Singularity is available on PATH.
+    Prerequisites (one-time, handled automatically by BactoWise):
+      - pgap.py is downloaded to ~/.bactowise/bin/ on first run or when
+        'bactowise db download --pgap' is called.
+      - The supplemental data (~30 GB) is downloaded to
+        ~/.bactowise/databases/pgap/ via pgap.py --update.
+      - The only external requirement is Singularity, Apptainer, Docker,
+        or Podman on PATH.
 
     Config example (see pipeline.yaml for the full commented block):
       - name: pgap
@@ -82,14 +74,22 @@ class PGAPRunner(BaseRunner):
         print(f"  ✓  Organism: {self.config.params['organism']}")
 
     def _find_pgap(self) -> str:
-        path = shutil.which("pgap.py") or shutil.which("pgap")
+        """
+        Locate the pgap.py wrapper script.
+        Checks PATH first, then the BactoWise-managed location in
+        ~/.bactowise/bin/ where download_pgap() places it.
+        """
+        from bactowise.utils.db_manager import _PGAP_BIN_DIR
+        path = (
+            shutil.which("pgap.py")
+            or shutil.which("pgap")
+            or (str(_PGAP_BIN_DIR / "pgap.py") if (_PGAP_BIN_DIR / "pgap.py").exists() else None)
+        )
         if not path:
             raise RuntimeError(
-                "  ✗  pgap.py not found on PATH.\n"
-                "     Download and install it once:\n"
-                "       curl -OL https://github.com/ncbi/pgap/raw/prod/scripts/pgap.py\n"
-                "       chmod +x pgap.py\n"
-                "       mv pgap.py ~/.local/bin/   # or any directory on PATH"
+                "  ✗  pgap.py not found.\n"
+                "     Run: bactowise db download --pgap\n"
+                "     This downloads pgap.py and the supplemental data automatically."
             )
         return path
 
@@ -97,7 +97,7 @@ class PGAPRunner(BaseRunner):
         """
         Return the PGAP supplemental data directory.
         Uses params.pgap_input_dir if set, otherwise PGAP_INPUT_DIR env var,
-        otherwise the default ~/.pgap/.
+        otherwise ~/.bactowise/databases/pgap/ (consistent with db_manager).
         """
         from_params = self.config.params.get("pgap_input_dir")
         if from_params:
@@ -163,8 +163,13 @@ class PGAPRunner(BaseRunner):
             report_usage = report_usage,
         )
 
+        # Pass PGAP_INPUT_DIR so pgap.py finds the data in our managed location.
+        # Merges with the current environment so other required vars are preserved.
+        run_env = {**os.environ, "PGAP_INPUT_DIR": str(self._pgap_data_dir())}
+
         print(f"[pgap] Organism:   {organism}")
         print(f"[pgap] Runtime:    {runtime_bin}")
+        print(f"[pgap] Data dir:   {self._pgap_data_dir()}")
         print(f"[pgap] Command:    {' '.join(cmd)}")
         print(f"[pgap] Logging to: {log_file}")
 
@@ -174,6 +179,7 @@ class PGAPRunner(BaseRunner):
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 text=True,
+                env=run_env,
             )
 
         if result.returncode != 0:
@@ -200,19 +206,26 @@ class PGAPRunner(BaseRunner):
         pgap.py manages the container internally — we pass it:
           -g  path to the input fasta
           -s  organism name (genus or genus species)
-          -o  output directory
+          -o  output directory (pgap.py creates this itself — must not pre-exist)
           -D  container runtime binary (singularity, docker, etc.)
           -c  CPU count
           -r or -n  usage reporting flag (required — one or the other)
+
+        Note: pgap.py requires the output directory to not already exist.
+        We use a timestamped subdirectory to avoid conflicts on re-runs.
         """
+        import time
+        # pgap.py creates the output dir itself and fails if it already exists.
+        # Use a run-specific subdir so reruns don't conflict.
+        output_dir = self.output_dir / f"run_{int(time.time())}"
+
         cmd = [
             pgap_bin,
             "-g", str(fasta.resolve()),
             "-s", organism,
-            "-o", str(self.output_dir.resolve()),
+            "-o", str(output_dir),
             "-D", runtime_bin,
             "-c", str(threads),
-            "--no-internet",   # safe default for HPC; remove if NCBI connectivity needed
         ]
 
         # Usage reporting: one flag is required by pgap.py

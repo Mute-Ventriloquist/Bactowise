@@ -14,10 +14,13 @@ from bactowise.utils.config_manager import (
 )
 from bactowise.utils.db_manager import (
     DEFAULT_DB_ROOT,
+    _DEFAULT_PGAP_DATA_DIR,
     download_bakta,
     download_checkm,
+    download_pgap,
     is_bakta_present,
     is_checkm_present,
+    is_pgap_present,
 )
 
 app = typer.Typer(
@@ -40,30 +43,36 @@ app.add_typer(db_app, name="db")
 def db_download(
     checkm: bool = typer.Option(False, "--checkm", help="CheckM only."),
     bakta:  bool = typer.Option(False, "--bakta",  help="Bakta only."),
+    pgap:   bool = typer.Option(False, "--pgap",   help="PGAP only (~30 GB)."),
     force:  bool = typer.Option(
         False, "--force-db-download",
         help="Re-download even if already present.",
     ),
 ):
-    """Download required databases (~4 GB, one-time).
+    """Download all required databases, one-time (~32 GB total).
 
     \b
-    Stores databases under ~/.bactowise/databases/. By default downloads both:
+    Stores all databases under ~/.bactowise/databases/:
       checkm/      — CheckM marker gene database (~2 GB)
       bakta/       — Bakta annotation database, light build (~2 GB)
+      pgap/        — PGAP supplemental data (~30 GB)
 
     \b
-    Skips any database that is already complete. Use --force-db-download
-    to wipe and re-download. Interrupted downloads are detected automatically
-    and resumed on the next run.
+    Use individual flags to download only specific databases:
+      bactowise db download --checkm
+      bactowise db download --bakta
+      bactowise db download --pgap
 
     \b
     Examples:
       bactowise db download
+      bactowise db download --pgap --force-db-download
       bactowise db download --checkm --force-db-download
     """
-    download_checkm_flag = checkm or (not checkm and not bakta)
-    download_bakta_flag  = bakta  or (not checkm and not bakta)
+    any_specified = checkm or bakta or pgap
+    download_checkm_flag = checkm or not any_specified
+    download_bakta_flag  = bakta  or not any_specified
+    download_pgap_flag   = pgap   or not any_specified
 
     typer.echo(f"\nBactoWise — Database Download")
     typer.echo(f"  Storage : {DEFAULT_DB_ROOT}")
@@ -84,6 +93,13 @@ def db_download(
         except RuntimeError as e:
             typer.echo(f"\n✗ Bakta: {e}", err=True)
             errors.append("bakta")
+
+    if download_pgap_flag:
+        try:
+            download_pgap(force=force)
+        except RuntimeError as e:
+            typer.echo(f"\n✗ PGAP: {e}", err=True)
+            errors.append("pgap")
 
     if errors:
         typer.echo(f"\n✗ Failed: {', '.join(errors)}\n", err=True)
@@ -108,11 +124,13 @@ def db_status():
 
     checkm_ok = is_checkm_present()
     bakta_ok  = is_bakta_present()
+    pgap_ok   = is_pgap_present()
 
     typer.echo(f"  {'✓' if checkm_ok else '✗'}  CheckM  → {DEFAULT_DB_ROOT / 'checkm'}")
     typer.echo(f"  {'✓' if bakta_ok  else '✗'}  Bakta   → {DEFAULT_DB_ROOT / 'bakta' / 'db-light'}")
+    typer.echo(f"  {'✓' if pgap_ok   else '✗'}  PGAP    → {_DEFAULT_PGAP_DATA_DIR}")
 
-    if not checkm_ok or not bakta_ok:
+    if not checkm_ok or not bakta_ok or not pgap_ok:
         typer.echo(f"\n  Run 'bactowise db download' to fetch missing databases.\n")
     else:
         typer.echo(f"\n  All databases present.\n")

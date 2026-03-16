@@ -60,28 +60,20 @@ tools:
       min-contig-length: 200
       threads: 4
 
-# ── PGAP (commented out — uncomment once prerequisites are in place) ──────────
-#
-# Prerequisites (one-time, done outside BactoWise):
-#   1. Download pgap.py and put it on PATH:
-#        curl -OL https://github.com/ncbi/pgap/raw/prod/scripts/pgap.py
-#        chmod +x pgap.py && mv pgap.py ~/.local/bin/
-#
-#   2. Download the supplemental data (~30 GB, ~100 GB working space needed):
-#        pgap.py --update
-#
-#   3. Ensure Singularity or Docker is available on PATH.
-#
-# Once the above are done, uncomment this block and run bactowise init --reset.
-#
-#  - name: pgap
-#    version: "2024-07-18.build7555"
-#    runtime: pgap
-#    depends_on: [checkm]
-#    params:
-#      organism: "Mycoplasmoides genitalium"
-#      threads: 4
-#      report_usage: false
+# ── PGAP prerequisite ─────────────────────────────────────────────────────────
+# pgap.py and its supplemental data are downloaded automatically on first run,
+# or explicitly with: bactowise db download --pgap
+# The only external requirement is a container runtime (Singularity or Docker).
+
+  - name: pgap
+    version: "2024-07-18.build7555"
+    runtime: pgap
+    depends_on: [checkm]
+    params:
+      organism: "Mycoplasmoides genitalium"   # required — genus or genus species
+      threads: 4                              # optional — default: 1
+      report_usage: false                     # optional — false = pass -n to pgap.py
+      # pgap_input_dir: override default ~/.bactowise/databases/pgap/ if needed
 
 output_dir: "./results"
 threads: 4

@@ -9,8 +9,10 @@ from bactowise.runners.base import BaseRunner
 from bactowise.runners.factory import RunnerFactory
 from bactowise.utils.db_manager import (
     download_all,
+    download_pgap,
     is_checkm_present,
     is_bakta_present,
+    is_pgap_present,
 )
 
 
@@ -271,28 +273,31 @@ class Pipeline:
         never has to run `bactowise db download` manually on first use.
 
         Only downloads databases that are actually needed by the active
-        (non-skipped) tools in this run.
+        (non-skipped) tools in this run. PGAP is handled separately since it
+        uses pgap.py --update rather than BactoWise's own download logic.
         """
         tool_names = {t.name for t in self.config.tools} - self.skip - set(self.gff_files)
 
         needs_checkm = "checkm" in tool_names
         needs_bakta  = "bakta"  in tool_names
+        needs_pgap   = "pgap"   in tool_names
 
         missing_checkm = needs_checkm and not is_checkm_present()
         missing_bakta  = needs_bakta  and not is_bakta_present()
+        missing_pgap   = needs_pgap   and not is_pgap_present()
 
-        if not missing_checkm and not missing_bakta:
+        if not missing_checkm and not missing_bakta and not missing_pgap:
             return
 
         print("\n  Some required databases are missing — downloading now.")
-        print("  This is a one-time step (~4 GB). You can also run:")
-        print("  'bactowise db download' to manage databases manually.\n")
+        print("  You can also run: 'bactowise db download' to manage databases manually.\n")
 
         try:
             download_all(
                 force=False,
                 checkm=missing_checkm,
                 bakta=missing_bakta,
+                pgap=missing_pgap,
             )
         except RuntimeError as e:
             raise RuntimeError(

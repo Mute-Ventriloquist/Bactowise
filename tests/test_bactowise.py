@@ -180,7 +180,6 @@ class TestRunnerFactory:
         assert "-D" in cmd
         assert "/usr/bin/singularity" in cmd
         assert "-n" in cmd          # report_usage=False → -n flag
-        assert "--no-internet" in cmd
 
     def test_unknown_runtime_raises(self, tmp_path):
         tool = ToolConfig.__new__(ToolConfig)

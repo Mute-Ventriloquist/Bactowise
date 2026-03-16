@@ -6,6 +6,7 @@ Manages downloads of all databases required by the BactoWise pipeline.
 Default storage location: ~/.bactowise/databases/
   ~/.bactowise/databases/checkm/   — CheckM marker gene database (~2 GB)
   ~/.bactowise/databases/bakta/    — Bakta annotation database, light build (~2 GB)
+  ~/.bactowise/databases/pgap/     — PGAP supplemental data (~30 GB)
 
 Usage (from CLI):
     bactowise db download              # download both databases
@@ -45,7 +46,12 @@ _CHECKM_MARKERS = ["genome_tree", "hmms", "pfam"]
 _BAKTA_SUBDIR    = "db-light"
 _BAKTA_MARKER    = "bakta.db"
 
-
+# PGAP: pgap.py --update downloads to ~/.pgap/ by default. The build_number
+# file is written on every successful update and serves as the completion marker.
+_DEFAULT_PGAP_DATA_DIR = Path("~/.bactowise/databases/pgap").expanduser()
+_PGAP_BIN_DIR          = Path("~/.bactowise/bin").expanduser()
+_PGAP_WRAPPER_URL      = "https://github.com/ncbi/pgap/raw/prod/scripts/pgap.py"
+_PGAP_DATA_MARKER      = "build_number"
 
 
 # ── Public helpers ─────────────────────────────────────────────────────────────
@@ -73,6 +79,17 @@ def is_bakta_present(db_root: Path = DEFAULT_DB_ROOT) -> bool:
     return (bakta_db_path(db_root) / _BAKTA_MARKER).exists()
 
 
+def pgap_data_dir(data_dir: Path = _DEFAULT_PGAP_DATA_DIR) -> Path:
+    """Return the PGAP supplemental data directory."""
+    return data_dir
+
+
+def is_pgap_present(data_dir: Path = _DEFAULT_PGAP_DATA_DIR) -> bool:
+    """Return True if PGAP supplemental data appears complete.
+    Checks for the build_number marker file written by pgap.py --update."""
+    return (data_dir / _PGAP_DATA_MARKER).exists()
+
+
 # ── Download orchestration ─────────────────────────────────────────────────────
 
 def download_all(
@@ -80,20 +97,24 @@ def download_all(
     db_root: Path = DEFAULT_DB_ROOT,
     checkm: bool = True,
     bakta: bool = True,
+    pgap: bool = False,
 ) -> None:
-    """Download CheckM and/or Bakta databases.
+    """Download CheckM, Bakta, and/or PGAP databases.
 
     Parameters
     ----------
     force   : re-download even if already present
-    db_root : parent directory for all BactoWise databases
+    db_root : parent directory for CheckM/Bakta databases
     checkm  : whether to download the CheckM database
     bakta   : whether to download the Bakta database
+    pgap    : whether to download the PGAP supplemental data (~30 GB)
     """
     if checkm:
         download_checkm(force=force, db_root=db_root)
     if bakta:
         download_bakta(force=force, db_root=db_root)
+    if pgap:
+        download_pgap(force=force)
 
 
 def download_checkm(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path:
@@ -208,6 +229,102 @@ def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path
 
     print(f"\n  ✓  Bakta database ready at: {dest}\n")
     return dest
+
+
+def download_pgap(force: bool = False, data_dir: Path = _DEFAULT_PGAP_DATA_DIR) -> Path:
+    """
+    Download the pgap.py wrapper script and the PGAP supplemental data.
+
+    Step 1: Download pgap.py from NCBI to ~/.bactowise/bin/pgap.py if not
+            already present (or if force=True). This replaces the manual
+            curl/chmod/mv steps previously required.
+
+    Step 2: Run pgap.py --update to download the supplemental data (~30 GB)
+            to ~/.bactowise/databases/pgap/ via PGAP_INPUT_DIR.
+
+    Parameters
+    ----------
+    force    : re-download pgap.py and re-run --update even if already present
+    data_dir : PGAP data directory (default: ~/.bactowise/databases/pgap/)
+    """
+    # ── Step 1: ensure pgap.py is available ───────────────────────────────────
+    pgap_bin = _ensure_pgap_wrapper(force=force)
+
+    # ── Step 2: download supplemental data ────────────────────────────────────
+    if is_pgap_present(data_dir) and not force:
+        print(f"  ✓  PGAP supplemental data already present at: {data_dir}")
+        print(f"     (use --force-db-download to re-download)")
+        return data_dir
+
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n  Downloading PGAP supplemental data (~30 GB) → {data_dir}")
+    print(f"  This is a one-time step and will take a while.\n")
+
+    import os
+    env = {**os.environ, "PGAP_INPUT_DIR": str(data_dir)}
+
+    result = subprocess.run([pgap_bin, "--update"], env=env, text=True)
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"pgap.py --update failed (exit {result.returncode}).\n"
+            f"Check the output above for details."
+        )
+
+    if not is_pgap_present(data_dir):
+        raise RuntimeError(
+            f"pgap.py --update appeared to succeed but {_PGAP_DATA_MARKER} "
+            f"was not found at {data_dir}.\n"
+            f"Try running manually: {pgap_bin} --update"
+        )
+
+    print(f"\n  ✓  PGAP supplemental data ready at: {data_dir}\n")
+    return data_dir
+
+
+def _ensure_pgap_wrapper(force: bool = False) -> str:
+    """
+    Ensure pgap.py is available, downloading it to ~/.bactowise/bin/ if needed.
+
+    Checks in order:
+    1. Already on PATH (e.g. user installed it manually) — use as-is.
+    2. Previously downloaded to ~/.bactowise/bin/pgap.py — use that.
+    3. Neither found (or force=True) — download from NCBI GitHub.
+
+    Returns the path to the pgap.py binary.
+    """
+    # Already on PATH — use it directly
+    on_path = shutil.which("pgap.py") or shutil.which("pgap")
+    if on_path and not force:
+        print(f"  ✓  pgap.py found on PATH: {on_path}")
+        return on_path
+
+    managed = _PGAP_BIN_DIR / "pgap.py"
+
+    if managed.exists() and not force:
+        print(f"  ✓  pgap.py already downloaded: {managed}")
+        return str(managed)
+
+    # Download from NCBI
+    _PGAP_BIN_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"  Downloading pgap.py wrapper → {managed}")
+    print(f"  Source: {_PGAP_WRAPPER_URL}\n")
+
+    try:
+        urllib.request.urlretrieve(_PGAP_WRAPPER_URL, managed)
+    except Exception as e:
+        managed.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Failed to download pgap.py: {e}\n"
+            f"Check your network connection and try again."
+        ) from e
+
+    # Make executable
+    import stat
+    managed.chmod(managed.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    print(f"  ✓  pgap.py downloaded and made executable: {managed}\n")
+    return str(managed)
 
 
 def _bakta_db_download_cmd(dest_dir: Path) -> list[str]:
