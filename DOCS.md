@@ -22,8 +22,8 @@
 
 ### Singularity / Apptainer
 
-Bakta runs inside a Singularity container. Singularity and Apptainer are the
-same runtime — Apptainer is the actively maintained community fork and is
+Bakta and PGAP run inside Singularity containers. Singularity and Apptainer are
+the same runtime — Apptainer is the actively maintained community fork and is
 recommended for new installs. The two are fully interchangeable; BactoWise
 detects whichever is available on your PATH.
 
@@ -76,7 +76,9 @@ BactoWise stores all databases under `~/.bactowise/databases/` and manages
 them through the `bactowise db` command. The default configuration already
 points to these paths — no manual edits needed.
 
-### Download all databases (recommended first step)
+### Core databases (~4 GB, required)
+
+Download CheckM and Bakta before your first run:
 
 ```bash
 bactowise db download
@@ -86,18 +88,43 @@ Downloads:
 - CheckM marker gene database (~2 GB) → `~/.bactowise/databases/checkm/`
 - Bakta annotation database, light build (~2 GB) → `~/.bactowise/databases/bakta/db-light/`
 
+The Bakta Singularity image (~500 MB) is pulled automatically during preflight
+on first run — no separate step needed.
+
+### PGAP supplemental data (~30 GB, optional)
+
+PGAP requires a large supplemental data download. This is only needed if you
+intend to use PGAP annotation. Because of its size, it is **not** included in
+`bactowise db download` by default — you must request it explicitly:
+
+```bash
+bactowise db download --pgap
+```
+
+This downloads the PGAP supplemental data to `~/.bactowise/databases/pgap/`
+and also downloads `pgap.py` (the PGAP wrapper script) to
+`~/.bactowise/bin/pgap.py` automatically. The only external requirement is
+that Singularity or Docker is available on PATH — pgap.py manages the PGAP
+container image internally.
+
+> **Disk space:** Plan for ~30 GB of storage for the PGAP data, plus ~100 GB
+> of total working space when a PGAP job is running. The download itself
+> takes significant time depending on your network.
+
 ### Download individual databases
 
 ```bash
 bactowise db download --checkm   # CheckM only
 bactowise db download --bakta    # Bakta only
+bactowise db download --pgap     # PGAP only (~30 GB, explicit opt-in)
 ```
 
 ### Force re-download
 
 ```bash
-bactowise db download --force-db-download        # both
+bactowise db download --force-db-download           # CheckM + Bakta
 bactowise db download --checkm --force-db-download  # CheckM only
+bactowise db download --pgap --force-db-download    # PGAP only
 ```
 
 ### Check database status
@@ -106,12 +133,24 @@ bactowise db download --checkm --force-db-download  # CheckM only
 bactowise db status
 ```
 
+This shows the status of all databases at their default locations:
+
+```
+✓  CheckM  → ~/.bactowise/databases/checkm
+✓  Bakta   → ~/.bactowise/databases/bakta/db-light
+–  PGAP    → ~/.bactowise/databases/pgap  (optional, ~30 GB)
+```
+
+The `–` for PGAP indicates it is optional — a missing PGAP database is not
+flagged as an error unless PGAP is active in your config.
+
 ### Interrupted downloads
 
-If a download is interrupted, just re-run `bactowise db download`. BactoWise
-checks for key marker files inside each database directory rather than just
-checking whether the directory exists, so partial downloads are detected and
-re-run automatically.
+If a download is interrupted, just re-run the same command. BactoWise checks
+for key marker files inside each database directory rather than just checking
+whether the directory exists, so partial downloads are detected and re-run
+automatically. For PGAP, the marker is a versioned `input-VERSION.BUILD/`
+subdirectory written by pgap.py on successful completion.
 
 ---
 
@@ -150,8 +189,11 @@ bactowise run -f mgenitalium.fasta
 On first run, BactoWise will automatically:
 - Create any missing conda environments (e.g. `checkm_env`, `prokka_env`)
 - Pull the Bakta Singularity image (~500 MB, stored in `~/.bactowise/images/`)
+- Download the PGAP supplemental data if PGAP is active in your config and the data is missing
 
 ### Output layout
+
+With all tools active (CheckM + Prokka + Bakta + PGAP):
 
 ```
 results/
@@ -165,11 +207,18 @@ results/
 │   ├── prokka_output.gbk
 │   └── logs/
 │       └── prokka.log
-└── bakta/
-    ├── *.gff3
-    ├── *.gbff
+├── bakta/
+│   ├── *.gff3
+│   ├── *.gbff
+│   └── logs/
+│       └── bakta.log
+└── pgap/                    ← only present when PGAP is active
+    ├── run_<timestamp>/     ← pgap.py creates a timestamped output directory
+    │   ├── annot.gff
+    │   ├── annot.gbk
+    │   └── cwltool.log      ← detailed pgap.py execution log
     └── logs/
-        └── bakta.log
+        └── pgap.log
 ```
 
 ---
@@ -183,8 +232,11 @@ The flag accepts any tool name defined in the active config and can be repeated.
 # Skip QC if the genome has already been assessed
 bactowise run -f genome.fasta --skip checkm
 
-# Skip both annotation tools and run QC only
+# Skip both annotation tools and run QC only (2-tool config)
 bactowise run -f genome.fasta --skip prokka --skip bakta
+
+# Skip PGAP but run everything else (when PGAP is active in config)
+bactowise run -f genome.fasta --skip pgap
 ```
 
 **What happens when you skip a tool:**
@@ -227,8 +279,19 @@ runtime — no other configuration change is needed.
 
 ### Usage
 
+The number of `--gff` flags required depends on how many annotation tools are
+active in your config. With Prokka + Bakta + PGAP all active:
+
 ```bash
-# Bypass stage 2 — provide GFF for all annotation tools
+bactowise run -f genome.fasta \
+  --gff bakta:/path/to/bakta.gff3 \
+  --gff prokka:/path/to/prokka.gff \
+  --gff pgap:/path/to/pgap.gff
+```
+
+With Prokka + Bakta only (PGAP commented out):
+
+```bash
 bactowise run -f genome.fasta \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff
@@ -256,8 +319,10 @@ regardless of whether annotation was run or provided:
 results/
 ├── bakta/
 │   └── provided_bakta.gff3    ← copied from your --gff path
-└── prokka/
-    └── provided_prokka.gff    ← copied from your --gff path
+├── prokka/
+│   └── provided_prokka.gff    ← copied from your --gff path
+└── pgap/
+    └── provided_pgap.gff      ← copied from your --gff path (if active)
 ```
 
 ### What the pipeline summary shows
@@ -265,6 +330,7 @@ results/
 ```
   ⊘  checkm          → skipped
   ↩  bakta           → GFF provided
+  ↩  pgap            → GFF provided
   ↩  prokka          → GFF provided
 ```
 
@@ -273,8 +339,8 @@ results/
 **Partial bypass (missing tools):**
 ```
 ✗ GFF files must be provided for ALL annotation tools or NONE.
-  Missing : prokka
-  Annotation tools in this config: bakta, prokka
+  Missing : pgap, prokka
+  Annotation tools in this config: bakta, pgap, prokka
 ```
 
 **Same tool in both --gff and --skip:**
@@ -286,7 +352,7 @@ results/
 
 **GFF file not found on disk:**
 ```
-✗ GFF file for 'bakta' not found: /path/to/bakta.gff3
+✗ GFF file for 'pgap' not found: /path/to/pgap.gff
 ```
 
 ---
@@ -334,14 +400,17 @@ After a BactoWise run, the annotation outputs are at:
 ```
 results/
 ├── bakta/
-│   └── *.gff3          ← use this for Bakta output
-└── prokka/
-    └── prokka_output.gff   ← use this for Prokka output
+│   └── *.gff3               ← Bakta output
+├── prokka/
+│   └── prokka_output.gff    ← Prokka output
+└── pgap/                    ← PGAP output (if active)
+    └── run_<timestamp>/
+        └── annot.gff
 ```
 
 When combining annotations from multiple isolates — for instance, one annotated
 with Bakta and others with Prokka — pass all the GFF files together to Panaroo
-in a single command. Panaroo handles mixed Bakta/Prokka input without issue.
+in a single command. Panaroo handles mixed Bakta/Prokka/PGAP input without issue.
 
 ### Installing Panaroo
 
@@ -383,11 +452,16 @@ all available options.
 | `singularity: command not found` | Run `module load singularity` or install Apptainer: `sudo apt install -y apptainer` |
 | `Database not found at ~/.bactowise/databases/bakta` | Run `bactowise db download --bakta` |
 | `CheckM database path not found` | Run `bactowise db download --checkm` |
-| `checkm_env not found` | Run `conda create -n checkm_env -c bioconda -c conda-forge checkm-genome=1.2.3 python=3.8 -y` |
+| `checkm_env not found` | BactoWise creates it automatically on first run — check preflight output |
 | `prokka not found on PATH` | BactoWise creates `prokka_env` automatically on first run — check preflight output |
 | `bactowise: command not found` | Run `conda activate <your-env>` first |
 | CheckM fails silently | Check `results/checkm/logs/checkm.log` |
-| Download interrupted | Re-run `bactowise db download` — partial downloads are detected automatically |
+| Download interrupted | Re-run the same `bactowise db download` command — partial downloads are detected automatically |
+| `pgap.py not found` | Run `bactowise db download --pgap` — this downloads pgap.py automatically |
+| `PGAP supplemental data not found` | Run `bactowise db download --pgap` (~30 GB, one-time) |
+| PGAP fails with cgroups error | This is a VM/HPC kernel issue with CPU limits. It is handled automatically — BactoWise does not pass `-c` to pgap.py. If it still occurs, check `results/pgap/run_<timestamp>/cwltool.log` |
+| PGAP fails with exit code 255 | Check `results/pgap/run_<timestamp>/cwltool.log` for the detailed Singularity error |
+| `No module named 'pkg_resources'` (CheckM) | Delete `checkm_env` and rerun: `conda env remove -n checkm_env -y && bactowise run -f genome.fasta` |
 
 ---
 
@@ -519,9 +593,22 @@ and point `database.path` to the same directory — BactoWise runs
 ### Enabling PGAP
 
 PGAP is included in the config but commented out by default because it
-requires a separate ~30 GB data download. Once you have run `pgap.py --update`,
-uncomment the PGAP block at the bottom of `pipeline.yaml` and set the
-organism name:
+requires a large ~30 GB data download and ~100 GB working space. To enable it:
+
+**Step 1 — Download the PGAP supplemental data:**
+```bash
+bactowise db download --pgap
+```
+This automatically downloads `pgap.py` to `~/.bactowise/bin/` and the
+supplemental data to `~/.bactowise/databases/pgap/`. The only external
+requirement is Singularity or Docker on PATH.
+
+**Step 2 — Uncomment the PGAP block in your installed config:**
+```bash
+nano ~/.bactowise/config/pipeline.yaml
+```
+Find the commented PGAP section near the bottom and uncomment it, setting
+the organism name for your genome:
 
 ```yaml
   - name: pgap
@@ -531,9 +618,15 @@ organism name:
     params:
       organism: "Mycoplasmoides genitalium"
       threads: 4
+      report_usage: false
 ```
 
 PGAP will then run in parallel with Bakta and Prokka in stage 2.
+
+> **Note on CPU limits:** BactoWise does not pass a CPU limit to pgap.py
+> because doing so causes a cgroups error on some cloud VMs and HPC nodes.
+> PGAP will use all available CPUs by default. If you need to limit resource
+> usage, run the full pipeline with `--skip pgap` and invoke pgap.py manually.
 
 ### Pointing to a custom database location
 

@@ -3,8 +3,10 @@
 Assess bacterial genome quality and annotate genes — one command, one config file.
 
 ```
-Stage 1:  CheckM          → completeness & contamination check
-Stage 2:  Prokka + Bakta  → gene annotation (run in parallel)
+Stage 1:  CheckM                    → completeness & contamination check
+Stage 2:  Prokka + Bakta + PGAP*    → gene annotation (run in parallel)
+
+* PGAP is optional — see setup below.
 ```
 
 If the genome fails QC thresholds, BactoWise warns you and continues — the scientist makes the final call.
@@ -15,11 +17,11 @@ If the genome fails QC thresholds, BactoWise warns you and continues — the sci
 
 ### 1. Install Singularity or Apptainer
 
-Bakta runs inside a Singularity container. Singularity and Apptainer are the
-same runtime — Apptainer is the actively maintained community fork and is
-recommended for new installs.
+Bakta and PGAP run inside Singularity containers. Apptainer is the actively
+maintained community fork and is recommended for new installs. The two are
+fully interchangeable — BactoWise detects whichever is available on your PATH.
 
-**On an HPC cluster (most common case):**
+**On an HPC cluster:**
 ```bash
 module load singularity
 # or: module load apptainer
@@ -58,22 +60,31 @@ conda install --use-local bactowise -c bioconda -c conda-forge
 > conda install --use-local bactowise -c bioconda -c conda-forge
 > ```
 
+### 3. Download databases
+
+**Core databases (~4 GB, required):**
+```bash
+bactowise db download
+```
+Downloads CheckM (~2 GB) and Bakta (~2 GB). The Bakta Singularity image
+(~500 MB) is pulled automatically on first run.
+
+**PGAP supplemental data (~30 GB, optional):**
+```bash
+bactowise db download --pgap
+```
+Only needed if you want to run PGAP annotation. This is a large one-time
+download — plan accordingly. See the [User Guide](DOCS.md#2-databases) for details.
+
 ---
 
 ## Running
 
 ```bash
-# Run the pipeline
 bactowise run -f genome.fasta
 ```
 
-On first run, BactoWise will automatically download the required databases
-(~4 GB) and pull the Bakta Singularity image before starting. Results land
-in `./results/` with subdirectories for each tool.
-
-> **Note:** Databases can also be downloaded ahead of time with
-> `bactowise db download`. See the [User Guide](DOCS.md#2-databases) for
-> details.
+Results land in `./results/` with subdirectories for each tool.
 
 **Skip a tool** (e.g. if QC has already been done):
 ```bash
@@ -82,6 +93,13 @@ bactowise run -f genome.fasta --skip checkm
 
 **Bypass annotation with pre-computed GFF files:**
 ```bash
+# With 3 annotation tools active (prokka + bakta + pgap):
+bactowise run -f genome.fasta \
+  --gff bakta:/path/to/bakta.gff3 \
+  --gff prokka:/path/to/prokka.gff \
+  --gff pgap:/path/to/pgap.gff
+
+# With 2 annotation tools (prokka + bakta only):
 bactowise run -f genome.fasta \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff
