@@ -46,10 +46,11 @@ _CHECKM_MARKERS = ["genome_tree", "hmms", "pfam"]
 _BAKTA_SUBDIR    = "db-light"
 _BAKTA_MARKER    = "bakta.db"
 
-# PGAP: pgap.py --update downloads to ~/.pgap/ by default. It creates a
-# versioned subdirectory input-VERSION.BUILD/ inside PGAP_INPUT_DIR.
-# We confirm presence by checking for any such subdirectory.
-_DEFAULT_PGAP_DATA_DIR = Path("~/.pgap").expanduser()
+# PGAP: pgap.py --update downloads data to wherever PGAP_INPUT_DIR points.
+# BactoWise sets PGAP_INPUT_DIR to ~/.bactowise/databases/pgap/ during download
+# so it lives alongside the other managed databases. pgap.py creates a versioned
+# input-VERSION.BUILD/ subdirectory inside this path.
+_DEFAULT_PGAP_DATA_DIR = Path("~/.bactowise/databases/pgap").expanduser()
 _PGAP_BIN_DIR          = Path("~/.bactowise/bin").expanduser()
 _PGAP_WRAPPER_URL      = "https://github.com/ncbi/pgap/raw/prod/scripts/pgap.py"
 _PGAP_DATA_MARKER      = "build_number"
