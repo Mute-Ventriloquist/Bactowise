@@ -63,15 +63,14 @@ class PGAPRunner(BaseRunner):
         runtime_bin = self._find_container_runtime()
         print(f"  ✓  Container runtime: {runtime_bin}")
 
-        # 4. organism is required
-        if not self.config.params.get("organism"):
+        # 4. organism is required — provided via -n/--organism on the command line
+        if not self.organism:
             raise RuntimeError(
-                f"  ✗  PGAP requires an organism name.\n"
-                f"     Add to pipeline.yaml under params:\n"
-                f"       params:\n"
-                f'         organism: "Genus species"'
+                "  ✗  PGAP requires an organism name.\n"
+                "     Pass it with the -n flag:\n"
+                "       bactowise run -f genome.fasta -n \"Genus species\""
             )
-        print(f"  ✓  Organism: {self.config.params['organism']}")
+        print(f"  ✓  Organism: {self.organism}")
 
     def _find_pgap(self) -> str:
         """
@@ -143,7 +142,7 @@ class PGAPRunner(BaseRunner):
 
         pgap_bin      = self._find_pgap()
         runtime_bin   = self._find_container_runtime()
-        organism      = self.config.params["organism"]
+        organism      = self.organism
         threads       = self.config.params.get("threads", 1)
         report_usage  = self.config.params.get("report_usage", False)
         log_file      = self.log_dir / "pgap.log"

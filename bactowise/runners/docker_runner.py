@@ -13,8 +13,8 @@ class DockerToolRunner(BaseRunner):
     Swapping Bakta for PGAP is purely a config change — this class handles both.
     """
 
-    def __init__(self, tool_config: ToolConfig, output_dir: Path):
-        super().__init__(tool_config, output_dir)
+    def __init__(self, tool_config: ToolConfig, output_dir: Path, organism: str = ""):
+        super().__init__(tool_config, output_dir, organism)
         self.client = self._connect_to_docker()
 
     def _connect_to_docker(self):

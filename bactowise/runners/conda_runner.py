@@ -24,8 +24,8 @@ class CondaToolRunner(BaseRunner):
     If conda_env is not set, the tool binary is expected on the active PATH.
     """
 
-    def __init__(self, tool_config: ToolConfig, output_dir: Path):
-        super().__init__(tool_config, output_dir)
+    def __init__(self, tool_config: ToolConfig, output_dir: Path, organism: str = ""):
+        super().__init__(tool_config, output_dir, organism)
 
     def preflight(self) -> None:
         print(f"\n[preflight] Checking conda tool: {self.config.name}")
@@ -218,5 +218,15 @@ class CondaToolRunner(BaseRunner):
         ]
         for key, val in self.config.params.items():
             tool_args += [f"--{key}", str(val)]
+
+        # Inject genus/species from the -n/--organism CLI arg if provided.
+        # These improve gene naming accuracy but do not affect the core annotation.
+        # Only add if not already set via params in the config.
+        genus, species = self._organism_parts()
+        if genus and "--genus" not in tool_args:
+            tool_args += ["--genus", genus]
+        if species and "--species" not in tool_args:
+            tool_args += ["--species", species]
+
         tool_args.append(str(fasta))
         return self._conda_run_cmd(tool_args)

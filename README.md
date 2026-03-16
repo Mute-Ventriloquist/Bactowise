@@ -63,8 +63,12 @@ conda install --use-local bactowise -c bioconda -c conda-forge
 ## Running
 
 ```bash
-bactowise run -f genome.fasta
+bactowise run -f genome.fasta -n "Genus species"
 ```
+
+The `-n` flag is the organism name as a valid NCBI Taxonomy string
+(e.g. `"Mycoplasmoides genitalium"`, `"Escherichia coli"`). It is passed to
+PGAP (required), and also improves labelling in Prokka and Bakta.
 
 On first run, BactoWise automatically sets up everything it needs — conda
 environments, container images, and all required databases. Just run it.
@@ -80,15 +84,15 @@ Results land in `./results/` with subdirectories for each tool.
 
 **Skip a tool** (e.g. if QC has already been done, or to skip PGAP for a quick run):
 ```bash
-bactowise run -f genome.fasta --skip checkm
-bactowise run -f genome.fasta --skip pgap
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip checkm
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip pgap
 ```
 
 **Bypass annotation with pre-computed GFF files:**
 
 Must provide GFF for all three annotation tools (Prokka, Bakta, PGAP) or none:
 ```bash
-bactowise run -f genome.fasta \
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff \
   --gff pgap:/path/to/pgap.gff

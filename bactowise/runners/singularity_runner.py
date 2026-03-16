@@ -35,8 +35,8 @@ class SingularityToolRunner(BaseRunner):
     Supports both 'singularity' and 'apptainer' — whichever is on PATH.
     """
 
-    def __init__(self, tool_config: ToolConfig, output_dir: Path):
-        super().__init__(tool_config, output_dir)
+    def __init__(self, tool_config: ToolConfig, output_dir: Path, organism: str = ""):
+        super().__init__(tool_config, output_dir, organism)
 
     # ── Preflight ─────────────────────────────────────────────────────────────
 
@@ -221,6 +221,16 @@ class SingularityToolRunner(BaseRunner):
         ]
         for key, val in self.config.params.items():
             cmd += [f"--{key}", str(val)]
+
+        # Inject genus/species from the -n/--organism CLI arg if provided.
+        # Bakta uses these for labelling output files only — they do not
+        # affect the core annotation database lookups.
+        genus, species = self._organism_parts()
+        if genus and "--genus" not in cmd:
+            cmd += ["--genus", genus]
+        if species and "--species" not in cmd:
+            cmd += ["--species", species]
+
         return cmd
 
     def _pgap_command(self, fasta: Path) -> list[str]:

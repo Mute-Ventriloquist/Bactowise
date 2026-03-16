@@ -14,8 +14,9 @@ class BaseRunner(abc.ABC):
     Swapping BaktaRunner for PGAPRunner is a config change, not a code change.
     """
 
-    def __init__(self, tool_config: ToolConfig, output_dir: Path):
+    def __init__(self, tool_config: ToolConfig, output_dir: Path, organism: str = ""):
         self.config = tool_config
+        self.organism = organism.strip()
         self.output_dir = output_dir / tool_config.name
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir = self.output_dir / "logs"
@@ -53,3 +54,17 @@ class BaseRunner(abc.ABC):
 
     def _tool_installed(self, tool_name: str) -> bool:
         return shutil.which(tool_name) is not None
+
+    def _organism_parts(self) -> tuple[str, str]:
+        """
+        Split self.organism into (genus, species).
+        "Mycoplasmoides genitalium" → ("Mycoplasmoides", "genitalium")
+        "Mycoplasma"               → ("Mycoplasma", "")
+        ""                         → ("", "")
+        """
+        if not self.organism:
+            return ("", "")
+        parts = self.organism.split(" ", 1)
+        genus = parts[0]
+        species = parts[1] if len(parts) > 1 else ""
+        return (genus, species)

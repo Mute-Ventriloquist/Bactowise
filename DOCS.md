@@ -182,8 +182,17 @@ It reads from `~/.bactowise/config/pipeline.yaml` automatically.
 ### Run
 
 ```bash
-bactowise run -f mgenitalium.fasta
+bactowise run -f mgenitalium.fasta -n "Mycoplasmoides genitalium"
 ```
+
+The `-n`/`--organism` flag is mandatory. It must be a valid NCBI Taxonomy
+name — check at https://www.ncbi.nlm.nih.gov/taxonomy. BactoWise passes
+this to all annotation tools:
+
+- **PGAP** — required as `-s`; used for genome size validation and marker
+  gene selection. An incorrect name will cause PGAP to fail.
+- **Prokka** — passed as `--genus` / `--species`; improves gene naming.
+- **Bakta** — passed as `--genus` / `--species`; improves output labelling.
 
 On first run, BactoWise will automatically:
 - Create any missing conda environments (e.g. `checkm_env`, `prokka_env`)
@@ -232,13 +241,13 @@ The flag accepts any tool name defined in the active config and can be repeated.
 
 ```bash
 # Skip QC if the genome has already been assessed
-bactowise run -f genome.fasta --skip checkm
+bactowise run -f genome.fasta -n "Escherichia coli" --skip checkm
 
 # Skip PGAP for a faster run (Prokka and Bakta still run)
-bactowise run -f genome.fasta --skip pgap
+bactowise run -f genome.fasta -n "Escherichia coli" --skip pgap
 
 # Skip all annotation and run QC only
-bactowise run -f genome.fasta --skip prokka --skip bakta --skip pgap
+bactowise run -f genome.fasta -n "Escherichia coli" --skip prokka --skip bakta --skip pgap
 ```
 
 **What happens when you skip a tool:**
@@ -285,7 +294,7 @@ Since BactoWise runs Prokka, Bakta, and PGAP by default, all three GFF files
 are required for a bypass:
 
 ```bash
-bactowise run -f genome.fasta \
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff \
   --gff pgap:/path/to/pgap.gff
@@ -296,7 +305,7 @@ that is not allowed — it violates the all-or-nothing rule. Instead, use
 `--skip pgap` together with the two GFF files:
 
 ```bash
-bactowise run -f genome.fasta \
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
   --skip pgap \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff
@@ -308,7 +317,7 @@ name in the active config exactly (e.g. `bakta`, `prokka`, `pgap`).
 You can also combine `--gff` with `--skip checkm` to bypass both stages:
 
 ```bash
-bactowise run -f genome.fasta \
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
   --skip checkm \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff
@@ -595,26 +604,29 @@ Download the larger database the same way (`bactowise db download --checkm`)
 and point `database.path` to the same directory — BactoWise runs
 `checkm data setRoot` automatically on every preflight.
 
-### Adjusting the PGAP organism name
+### Specifying the organism name
 
-PGAP requires an organism name to produce correctly labelled annotations.
-The default config sets this to `Mycoplasmoides genitalium` for the test
-genome. For your own genomes, update the `organism` field in the PGAP block
-of `~/.bactowise/config/pipeline.yaml`:
+The organism name is passed via `-n`/`--organism` on the command line and
+flows automatically to all annotation tools:
 
-```yaml
-  - name: pgap
-    version: "2024-07-18.build7555"
-    runtime: pgap
-    depends_on: [checkm]
-    params:
-      organism: "Your genus species"
-      report_usage: false
+- **PGAP** — passed as `-s`; used for genome size validation and annotation
+  marker selection. Must be a valid NCBI Taxonomy name.
+- **Prokka** — split on the first space into `--genus` and `--species`;
+  improves gene naming. Prokka is tolerant of approximate names.
+- **Bakta** — split on the first space into `--genus` and `--species`;
+  used for output file labelling only.
+
+To verify that a name is valid in NCBI Taxonomy:
+1. Go to https://www.ncbi.nlm.nih.gov/taxonomy
+2. Search for the organism name
+3. Confirm the result has rank `genus` or more specific
+
+```bash
+# Correct usage
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium"
+bactowise run -f genome.fasta -n "Escherichia coli"
+bactowise run -f genome.fasta -n "Staphylococcus"   # genus only is accepted
 ```
-
-Use the genus and species name. PGAP passes this to its internal taxonomic
-lookup — it does not need to be an exact NCBI taxonomy match for the
-annotation to run, but a close match produces better results.
 
 > **Note on CPU limits:** BactoWise does not pass a CPU limit to pgap.py
 > because doing so causes a cgroups error on some cloud VMs and HPC nodes.

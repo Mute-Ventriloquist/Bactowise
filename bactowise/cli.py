@@ -190,6 +190,14 @@ def run(
         exists=True,
         readable=True,
     ),
+    organism: str = typer.Option(
+        ..., "-n", "--organism",
+        help=(
+            "Organism name as a valid NCBI Taxonomy string "
+            "(e.g. 'Mycoplasmoides genitalium', 'Escherichia coli'). "
+            "Required by PGAP. Also improves labelling in Prokka and Bakta."
+        ),
+    ),
     skip: list[str] = typer.Option(
         [], "--skip",
         help=(
@@ -214,8 +222,13 @@ def run(
 
     \b
     Runs tools in dependency order. Within each stage, tools run in parallel:
-      Stage 1: checkm           — quality gate
-      Stage 2: prokka + bakta   — annotation (parallel)
+      Stage 1: checkm                    — quality gate
+      Stage 2: prokka + bakta + pgap     — annotation (parallel)
+
+    \b
+    The organism name (-n) must be a valid NCBI Taxonomy name. It is passed
+    to PGAP (required), Prokka (--genus/--species), and Bakta (--genus/--species).
+    Check validity at: https://www.ncbi.nlm.nih.gov/taxonomy
 
     \b
     On first run, any missing conda environments and container images are
@@ -224,15 +237,16 @@ def run(
     \b
     GFF bypass — skip stage 2 by providing pre-computed annotation files.
     Must provide GFF for ALL annotation tools or NONE (no partial bypass):
-      bactowise run -f genome.fasta \\
+      bactowise run -f genome.fasta -n "Escherichia coli" \\
         --gff bakta:/path/to/bakta.gff3 \\
-        --gff prokka:/path/to/prokka.gff
+        --gff prokka:/path/to/prokka.gff \\
+        --gff pgap:/path/to/pgap.gff
 
     \b
     Examples:
-      bactowise run -f genome.fasta
-      bactowise run -f genome.fasta --skip checkm
-      bactowise run -f genome.fasta --gff bakta:/results/bakta.gff3 --gff prokka:/results/prokka.gff
+      bactowise run -f genome.fasta -n "Mycoplasmoides genitalium"
+      bactowise run -f genome.fasta -n "Escherichia coli" --skip checkm
+      bactowise run -f genome.fasta -n "Staphylococcus aureus" --skip pgap
     """
     # Ensure the config is installed; install it automatically on first run
     # so 'bactowise run' works without requiring an explicit 'bactowise init'
@@ -256,17 +270,23 @@ def run(
         gff_files[tool_name.strip()] = Path(raw_path.strip())
 
     typer.echo(f"\nBactoWise")
-    typer.echo(f"  Genome : {fasta}")
-    typer.echo(f"  Config : {config_path}")
+    typer.echo(f"  Genome   : {fasta}")
+    typer.echo(f"  Organism : {organism}")
+    typer.echo(f"  Config   : {config_path}")
     if skip:
-        typer.echo(f"  Skip   : {', '.join(skip)}")
+        typer.echo(f"  Skip     : {', '.join(skip)}")
     if gff_files:
-        typer.echo(f"  GFF    : {', '.join(f'{t}:{p}' for t, p in gff_files.items())}")
+        typer.echo(f"  GFF      : {', '.join(f'{t}:{p}' for t, p in gff_files.items())}")
     typer.echo()
 
     try:
         pipeline_config = load_config(config_path)
-        pipeline = Pipeline(pipeline_config, skip=set(skip), gff_files=gff_files or None)
+        pipeline = Pipeline(
+            pipeline_config,
+            skip=set(skip),
+            gff_files=gff_files or None,
+            organism=organism,
+        )
         pipeline.run(fasta)
     except (FileNotFoundError, ValueError) as e:
         typer.echo(f"\n✗ {e}", err=True)

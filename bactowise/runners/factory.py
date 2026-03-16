@@ -18,19 +18,19 @@ class RunnerFactory:
     """
 
     @staticmethod
-    def create(tool_config: ToolConfig, output_dir: Path) -> BaseRunner:
+    def create(tool_config: ToolConfig, output_dir: Path, organism: str = "") -> BaseRunner:
         # Named tools get their own specialised runner regardless of runtime
         if tool_config.name == "checkm":
-            return CheckMRunner(tool_config, output_dir)
+            return CheckMRunner(tool_config, output_dir, organism)
         if tool_config.name == "pgap":
-            return PGAPRunner(tool_config, output_dir)
+            return PGAPRunner(tool_config, output_dir, organism)
 
         if tool_config.runtime == "conda":
-            return CondaToolRunner(tool_config, output_dir)
+            return CondaToolRunner(tool_config, output_dir, organism)
         elif tool_config.runtime == "docker":
-            return DockerToolRunner(tool_config, output_dir)
+            return DockerToolRunner(tool_config, output_dir, organism)
         elif tool_config.runtime == "singularity":
-            return SingularityToolRunner(tool_config, output_dir)
+            return SingularityToolRunner(tool_config, output_dir, organism)
         else:
             raise ValueError(
                 f"Unknown runtime '{tool_config.runtime}' for tool '{tool_config.name}'.\n"

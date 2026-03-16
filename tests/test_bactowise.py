@@ -133,7 +133,7 @@ class TestRunnerFactory:
             mock_client = MagicMock()
             mock_client.ping.return_value = True
             mock_docker.return_value = mock_client
-            runner = RunnerFactory.create(tool, tmp_path)
+            runner = RunnerFactory.create(tool, tmp_path, organism="Escherichia coli")
             assert isinstance(runner, DockerToolRunner)
 
     def test_singularity_runtime_returns_singularity_runner(self, tmp_path):
@@ -160,9 +160,9 @@ class TestRunnerFactory:
         from bactowise.runners.pgap_runner import PGAPRunner
         tool = ToolConfig(
             name="pgap", version="2024-07-18.build7555", runtime="pgap",
-            params={"organism": "Mycoplasmoides genitalium", "threads": 4}
+            params={"report_usage": False}
         )
-        runner = PGAPRunner(tool, tmp_path)
+        runner = PGAPRunner(tool, tmp_path, organism="Mycoplasmoides genitalium")
         fasta = tmp_path / "genome.fasta"
         fasta.touch()
         cmd = runner._build_command(
@@ -170,7 +170,7 @@ class TestRunnerFactory:
             runtime_bin="/usr/bin/singularity",
             fasta=fasta,
             organism="Mycoplasmoides genitalium",
-            threads=4,
+            threads=1,
             report_usage=False,
         )
         assert "/usr/local/bin/pgap.py" in cmd
@@ -191,6 +191,61 @@ class TestRunnerFactory:
         object.__setattr__(tool, "params", {})
         with pytest.raises(ValueError, match="Unknown runtime"):
             RunnerFactory.create(tool, tmp_path)
+
+
+# ─── Organism propagation tests ──────────────────────────────────────────────
+
+class TestOrganismPropagation:
+    def test_organism_parts_full(self, tmp_path):
+        from bactowise.runners.conda_runner import CondaToolRunner
+        tool = ToolConfig(name="prokka", version="1.14.6", runtime="conda")
+        runner = CondaToolRunner(tool, tmp_path, organism="Mycoplasmoides genitalium")
+        assert runner._organism_parts() == ("Mycoplasmoides", "genitalium")
+
+    def test_organism_parts_genus_only(self, tmp_path):
+        from bactowise.runners.conda_runner import CondaToolRunner
+        tool = ToolConfig(name="prokka", version="1.14.6", runtime="conda")
+        runner = CondaToolRunner(tool, tmp_path, organism="Mycoplasma")
+        assert runner._organism_parts() == ("Mycoplasma", "")
+
+    def test_organism_parts_empty(self, tmp_path):
+        from bactowise.runners.conda_runner import CondaToolRunner
+        tool = ToolConfig(name="prokka", version="1.14.6", runtime="conda")
+        runner = CondaToolRunner(tool, tmp_path, organism="")
+        assert runner._organism_parts() == ("", "")
+
+    def test_prokka_command_includes_genus_species(self, tmp_path):
+        from bactowise.runners.conda_runner import CondaToolRunner
+        tool = ToolConfig(name="prokka", version="1.14.6", runtime="conda")
+        runner = CondaToolRunner(tool, tmp_path, organism="Escherichia coli")
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+        cmd = runner._prokka_command(fasta)
+        assert "--genus" in cmd
+        assert "Escherichia" in cmd
+        assert "--species" in cmd
+        assert "coli" in cmd
+
+    def test_prokka_command_no_organism(self, tmp_path):
+        from bactowise.runners.conda_runner import CondaToolRunner
+        tool = ToolConfig(name="prokka", version="1.14.6", runtime="conda")
+        runner = CondaToolRunner(tool, tmp_path, organism="")
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+        cmd = runner._prokka_command(fasta)
+        assert "--genus" not in cmd
+        assert "--species" not in cmd
+
+    def test_pipeline_passes_organism_to_runners(self, tmp_path):
+        from bactowise.pipeline import Pipeline
+        from bactowise.models.config import PipelineConfig
+        config = PipelineConfig(
+            tools=[{"name": "prokka", "version": "1.14.6", "runtime": "conda"}],
+            output_dir=str(tmp_path),
+        )
+        pipeline = Pipeline(config, organism="Staphylococcus aureus")
+        assert pipeline.organism == "Staphylococcus aureus"
+        assert pipeline.runners["prokka"].organism == "Staphylococcus aureus"
 
 
 # ─── Version warning test ─────────────────────────────────────────────────────

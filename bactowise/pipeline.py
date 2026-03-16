@@ -49,9 +49,11 @@ class Pipeline:
         config: PipelineConfig,
         skip: set[str] | None = None,
         gff_files: dict[str, Path] | None = None,
+        organism: str = "",
     ):
         self.config = config
         self.skip: set[str] = set(skip or [])
+        self.organism = organism.strip()
 
         # Validate skip names against the tool list so typos surface immediately
         known_tools = {t.name for t in config.tools}
@@ -75,7 +77,7 @@ class Pipeline:
         # their output is provided directly — no Docker / conda contact needed.
         bypassed = set(self.gff_files.keys())
         self.runners: dict[str, BaseRunner] = {
-            tool.name: RunnerFactory.create(tool, config.output_dir)
+            tool.name: RunnerFactory.create(tool, config.output_dir, self.organism)
             for tool in config.tools
             if tool.name not in self.skip and tool.name not in bypassed
         }

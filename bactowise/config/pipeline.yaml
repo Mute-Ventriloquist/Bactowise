@@ -22,13 +22,15 @@ tools:
         - bioconda
         - defaults
       dependencies: []
+    database:
+      path: "~/.bactowise/databases/checkm"
     qc_criteria:
       completeness: 95.0
       contamination: 5.0
     params:
-      mode: taxonomy_wf
-      rank: domain
-      taxon: Bacteria
+      mode: taxonomy_wf   # taxonomy_wf (default, ~2 GB db) or lineage_wf (more accurate, ~40 GB db)
+      rank: domain        # used by taxonomy_wf — 'domain' is correct for bacteria
+      taxon: Bacteria     # used by taxonomy_wf — set to your domain/phylum/class as needed
       threads: 4
 
   - name: prokka
@@ -43,9 +45,12 @@ tools:
         - defaults
       dependencies: []
     params:
-      genus: "Mycoplasma"
-      species: "genitalium"
-      kingdom: Bacteria
+      # genus and species are optional — Prokka uses its general bacterial
+      # database when omitted, which works for any organism. Specifying them
+      # improves gene naming accuracy when the organism is known.
+      # genus: "Mycoplasma"
+      # species: "genitalium"
+      kingdom: Bacteria   # set to Viruses or Archaea if appropriate
       cpus: 4
 
   - name: bakta
@@ -60,20 +65,22 @@ tools:
       min-contig-length: 200
       threads: 4
 
-# ── PGAP prerequisite ─────────────────────────────────────────────────────────
+# ── PGAP ──────────────────────────────────────────────────────────────────────
 # pgap.py and its supplemental data are downloaded automatically on first run,
 # or explicitly with: bactowise db download --pgap
 # The only external requirement is a container runtime (Singularity or Docker).
+#
+# organism is required by PGAP — set it to the genus or genus species of your
+# input genome. This does not need to be an exact NCBI taxonomy match.
 
   - name: pgap
     version: "2024-07-18.build7555"
     runtime: pgap
     depends_on: [checkm]
     params:
-      organism: "Mycoplasmoides genitalium"   # required — genus or genus species
-      threads: 4                              # optional — default: 1
-      report_usage: false                     # optional — false = pass -n to pgap.py
-      # pgap_input_dir: override default ~/.bactowise/databases/pgap/ if needed
+      # organism is passed via -n/--organism on the command line — not here.
+      report_usage: false    # false = pass -n to pgap.py (no anonymous usage reporting)
+      # pgap_input_dir: "~/.bactowise/databases/pgap"  # override default data dir if needed
 
 output_dir: "./results"
 threads: 4
