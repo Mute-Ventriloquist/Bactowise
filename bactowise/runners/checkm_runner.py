@@ -110,24 +110,39 @@ class CheckMRunner(CondaToolRunner):
 
         print(f"\n  ✓  Conda env '{env_name}' created successfully.")
 
-        # CheckM 1.2.3 imports pkg_resources at startup but conda-forge's
-        # setuptools noarch package does not reliably include it.
-        # We call the env's Python binary directly (not via conda run) to
-        # guarantee pip installs into the correct site-packages directory.
-        python_bin = Path(conda_root) / "envs" / env_name / "bin" / "python"
-        print(f"  Installing pkg_resources fix for CheckM...")
-        pip_result = subprocess.run(
-            [str(python_bin), "-m", "pip", "install",
-             "--force-reinstall", "--quiet", "setuptools"],
-            text=True,
+        # The bioconda build of checkm-genome=1.2.3 imports pkg_resources at
+        # startup but doesn't handle the case where it's missing (unlike newer
+        # pip builds which have a try/except fallback). Rather than fighting
+        # conda/pip setuptools version conflicts, we write a minimal shim
+        # directly to the env's site-packages. This is deterministic and works
+        # regardless of setuptools version or conda channel behaviour.
+        site_packages = (
+            Path(conda_root) / "envs" / env_name / "lib" / "python3.11" / "site-packages"
         )
-        if pip_result.returncode != 0:
-            print(
-                f"  ⚠  pip install setuptools failed — CheckM may fail at runtime.\n"
-                f"     Fix manually: {python_bin} -m pip install --force-reinstall setuptools"
+        # Fall back to glob if Python version differs
+        if not site_packages.exists():
+            import glob
+            matches = glob.glob(
+                str(Path(conda_root) / "envs" / env_name / "lib" / "python3.*" / "site-packages")
             )
-        else:
-            print(f"  ✓  pkg_resources available.")
+            if matches:
+                site_packages = Path(sorted(matches)[-1])
+
+        shim_path = site_packages / "pkg_resources.py"
+        if not shim_path.exists():
+            print(f"  Writing pkg_resources shim to {shim_path}")
+            shim_path.write_text(
+                "# Minimal pkg_resources shim for checkm-genome=1.2.3\n"
+                "import os as _os, sys as _sys\n"
+                "def resource_filename(package_or_requirement, resource_name):\n"
+                "    if isinstance(package_or_requirement, str):\n"
+                "        mod = _sys.modules.get(package_or_requirement)\n"
+                "        base = _os.path.dirname(mod.__file__) if mod else _os.getcwd()\n"
+                "    else:\n"
+                "        base = _os.path.dirname(package_or_requirement.__file__)\n"
+                "    return _os.path.join(base, resource_name)\n"
+            )
+            print(f"  ✓  pkg_resources shim installed.")
 
     def _configure_database(self, db_path: Path) -> None:
         """
