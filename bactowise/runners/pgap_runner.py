@@ -219,7 +219,10 @@ class PGAPRunner(BaseRunner):
             "-s", organism,
             "-o", str(output_dir),
             "-D", runtime_bin,
-            "-c", str(threads),
+            # Note: -c (CPU limit) is intentionally omitted. pgap.py passes
+            # --cpus to Singularity which requires cgroups v2 support. On many
+            # cloud VMs and HPC nodes this causes a fatal cgroups error. PGAP
+            # will use all available CPUs by default which is fine.
         ]
 
         # Usage reporting: one flag is required by pgap.py
