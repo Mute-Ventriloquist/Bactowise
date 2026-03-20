@@ -163,6 +163,7 @@ class CheckMRunner(CondaToolRunner):
         console.print(f"  [success]✓[/success]  CheckM database configured.")
 
     def run(self, fasta: Path) -> Path:
+        console.print()
         self._cprint("Starting genome quality assessment...")
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -172,9 +173,9 @@ class CheckMRunner(CondaToolRunner):
         mode = self.config.params.get("mode", "taxonomy_wf")
         cmd = self._build_checkm_command(fasta, mode)
 
-        self._cprint(f"Mode:       [muted]{mode}[/muted]")
-        self._cprint(f"Command:    [muted]{' '.join(cmd)}[/muted]")
-        self._cprint(f"Logging to: [muted]{log_file}[/muted]")
+        self._cprint(f"[label]Mode:[/label]       [muted]{mode}[/muted]")
+        self._cprint(f"[label]Command:[/label]    [muted]{' '.join(cmd)}[/muted]")
+        self._cprint(f"[label]Logging to:[/label] [muted]{log_file}[/muted]")
 
         with open(log_file, "w") as log:
             result = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, text=True)
@@ -189,6 +190,7 @@ class CheckMRunner(CondaToolRunner):
         self._evaluate_qc()
 
         self._cprint(f"[success]✓ Finished.[/success] Output at: [muted]{self.output_dir}[/muted]")
+        console.print()
         return self.output_dir
 
     def _build_checkm_command(self, fasta: Path, mode: str) -> list[str]:

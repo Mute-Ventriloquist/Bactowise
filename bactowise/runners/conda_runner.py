@@ -176,13 +176,14 @@ class CondaToolRunner(BaseRunner):
         return os.path.expanduser("~/miniconda3")
 
     def run(self, fasta: Path) -> Path:
+        console.print()
         self._cprint("Starting annotation...")
 
         cmd = self._build_command(fasta)
         log_file = self.log_dir / f"{self.config.name}.log"
 
-        self._cprint(f"Command: [muted]{' '.join(cmd)}[/muted]")
-        self._cprint(f"Logging to: [muted]{log_file}[/muted]")
+        self._cprint(f"[label]Command:[/label]    [muted]{' '.join(cmd)}[/muted]")
+        self._cprint(f"[label]Logging to:[/label] [muted]{log_file}[/muted]")
 
         with open(log_file, "w") as log:
             result = subprocess.run(
@@ -199,6 +200,7 @@ class CondaToolRunner(BaseRunner):
             )
 
         self._cprint(f"[success]✓ Finished.[/success] Output at: [muted]{self.output_dir}[/muted]")
+        console.print()
         return self.output_dir
 
     def _build_command(self, fasta: Path) -> list[str]:

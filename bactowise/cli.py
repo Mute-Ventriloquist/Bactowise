@@ -12,6 +12,7 @@ from bactowise.utils.config_manager import (
     ensure_config,
     install_config,
 )
+from bactowise.utils.console import console
 from bactowise.utils.db_manager import (
     DEFAULT_DB_ROOT,
     _DEFAULT_PGAP_DATA_DIR,
@@ -256,27 +257,24 @@ def run(
     try:
         config_path = ensure_config()
     except RuntimeError as e:
-        typer.echo(f"\n✗ {e}", err=True)
+        console.print(f"\n[user_error]✗ {e}[/user_error]")
         raise typer.Exit(code=1)
 
     # Parse and validate --skip stage_N entries
     skip_stages: set[int] = set()
-    valid_stage_pattern = {"stage_1", "stage_2", "stage_3"}  # extend as needed
     for entry in skip:
         if not entry.startswith("stage_"):
-            typer.echo(
-                f"\n✗ Invalid --skip value: '{entry}'\n"
-                f"  Expected a stage identifier, e.g. --skip stage_1",
-                err=True,
+            console.print(
+                f"\n[user_error]✗ Invalid --skip value: '{entry}'[/user_error]\n"
+                f"  Expected a stage identifier, e.g. [bold]--skip stage_1[/bold]"
             )
             raise typer.Exit(code=1)
         try:
             stage_num = int(entry.split("_", 1)[1])
         except (IndexError, ValueError):
-            typer.echo(
-                f"\n✗ Invalid --skip value: '{entry}'\n"
-                f"  Expected format: stage_<number>  (e.g. stage_1)",
-                err=True,
+            console.print(
+                f"\n[user_error]✗ Invalid --skip value: '{entry}'[/user_error]\n"
+                f"  Expected format: [bold]stage_<number>[/bold]  (e.g. stage_1)"
             )
             raise typer.Exit(code=1)
         skip_stages.add(stage_num)
@@ -285,24 +283,24 @@ def run(
     gff_files: dict[str, Path] = {}
     for entry in gff:
         if ":" not in entry:
-            typer.echo(
-                f"\n✗ Invalid --gff format: '{entry}'\n"
-                f"  Expected: tool:path  (e.g. --gff bakta:/results/bakta.gff3)",
-                err=True,
+            console.print(
+                f"\n[user_error]✗ Invalid --gff format: '{entry}'[/user_error]\n"
+                f"  Expected: [bold]tool:path[/bold]  (e.g. --gff bakta:/results/bakta.gff3)"
             )
             raise typer.Exit(code=1)
         tool_name, _, raw_path = entry.partition(":")
         gff_files[tool_name.strip()] = Path(raw_path.strip())
 
-    typer.echo(f"\nBactoWise")
-    typer.echo(f"  Genome   : {fasta}")
-    typer.echo(f"  Organism : {organism}")
-    typer.echo(f"  Config   : {config_path}")
+    console.print()
+    console.print("[bold]BactoWise[/bold]")
+    console.print(f"  [label]Genome[/label]   : [muted]{fasta}[/muted]")
+    console.print(f"  [label]Organism[/label] : [bold]{organism}[/bold]")
+    console.print(f"  [label]Config[/label]   : [muted]{config_path}[/muted]")
     if skip_stages:
-        typer.echo(f"  Skip     : {', '.join(f'stage_{s}' for s in sorted(skip_stages))}")
+        console.print(f"  [label]Skip[/label]     : [warning]{', '.join(f'stage_{s}' for s in sorted(skip_stages))}[/warning]")
     if gff_files:
-        typer.echo(f"  GFF      : {', '.join(f'{t}:{p}' for t, p in gff_files.items())}")
-    typer.echo()
+        console.print(f"  [label]GFF[/label]      : [bypass]{', '.join(f'{t}:{p}' for t, p in gff_files.items())}[/bypass]")
+    console.print()
 
     try:
         pipeline_config = load_config(config_path)
@@ -314,10 +312,10 @@ def run(
         )
         pipeline.run(fasta)
     except (FileNotFoundError, ValueError) as e:
-        typer.echo(f"\n✗ {e}", err=True)
+        console.print(f"\n[user_error]✗ {e}[/user_error]")
         raise typer.Exit(code=1)
     except RuntimeError as e:
-        typer.echo(f"\n✗ {e}", err=True)
+        console.print(f"\n[user_error]✗ {e}[/user_error]")
         raise typer.Exit(code=1)
 
 
@@ -339,40 +337,41 @@ def validate():
     config_path = active_config_path()
 
     if not config_path.exists():
-        typer.echo(
-            f"\n✗ No config found at: {config_path}\n"
-            f"  Run 'bactowise init' to install it.\n",
-            err=True,
+        console.print(
+            f"\n[user_error]✗ No config found at: {config_path}[/user_error]\n"
+            f"  Run [bold]bactowise init[/bold] to install it."
         )
         raise typer.Exit(code=1)
 
     try:
         cfg = load_config(config_path)
-        typer.echo(f"\n✓ Config valid — {len(cfg.tools)} tool(s):\n")
+        console.print(f"\n[success]✓ Config valid — {len(cfg.tools)} tool(s):[/success]\n")
         for tool in cfg.tools:
             role_tag = f" [{tool.role}]" if tool.role == "qc" else ""
-            typer.echo(f"  {tool.name}{role_tag}")
-            typer.echo(f"    version    : {tool.version}")
-            typer.echo(f"    runtime    : {tool.runtime}")
+            console.print(f"  [bold]{tool.name}[/bold]{role_tag}")
+            console.print(f"    [label]version[/label]    : [muted]{tool.version}[/muted]")
+            console.print(f"    [label]runtime[/label]    : [muted]{tool.runtime}[/muted]")
             if tool.depends_on:
-                typer.echo(f"    depends_on : {', '.join(tool.depends_on)}")
+                console.print(f"    [label]depends_on[/label] : [muted]{', '.join(tool.depends_on)}[/muted]")
             if tool.runtime in ("docker", "singularity"):
-                typer.echo(f"    image      : {tool.image}")
+                console.print(f"    [label]image[/label]      : [muted]{tool.image}[/muted]")
             if tool.conda_env:
-                typer.echo(f"    conda env  : {tool.conda_env.name}")
+                console.print(f"    [label]conda env[/label]  : [muted]{tool.conda_env.name}[/muted]")
                 if tool.conda_env.dependencies:
-                    typer.echo(f"    deps       : {', '.join(tool.conda_env.dependencies)}")
+                    console.print(f"    [label]deps[/label]       : [muted]{', '.join(tool.conda_env.dependencies)}[/muted]")
             if tool.database:
-                typer.echo(f"    database   : {tool.database.path}")
+                console.print(f"    [label]database[/label]   : [muted]{tool.database.path}[/muted]")
             if tool.qc_criteria:
-                typer.echo(f"    qc pass    : completeness > {tool.qc_criteria.completeness}%, "
-                           f"contamination < {tool.qc_criteria.contamination}%")
-            typer.echo()
-        typer.echo(f"  config     : {config_path}")
-        typer.echo(f"  output_dir : {cfg.output_dir}")
-        typer.echo(f"  threads    : {cfg.threads}\n")
+                console.print(
+                    f"    [label]qc pass[/label]    : completeness > [bold]{tool.qc_criteria.completeness}%[/bold], "
+                    f"contamination < [bold]{tool.qc_criteria.contamination}%[/bold]"
+                )
+            console.print()
+        console.print(f"  [label]config[/label]     : [muted]{config_path}[/muted]")
+        console.print(f"  [label]output_dir[/label] : [muted]{cfg.output_dir}[/muted]")
+        console.print(f"  [label]threads[/label]    : [bold]{cfg.threads}[/bold]\n")
     except (FileNotFoundError, ValueError) as e:
-        typer.echo(f"\n✗ {e}", err=True)
+        console.print(f"\n[user_error]✗ {e}[/user_error]")
         raise typer.Exit(code=1)
 
 

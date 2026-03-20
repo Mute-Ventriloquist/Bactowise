@@ -43,13 +43,15 @@ def tool_colour(tool_name: str) -> str:
 # ── Shared console ────────────────────────────────────────────────────────────
 
 _theme = Theme({
-    "success":  "bold green",
-    "warning":  "bold yellow",
-    "error":    "bold red",
-    "skip":     "dim white",
-    "bypass":   "italic cyan",
-    "info":     "bright_blue",
-    "muted":    "dim",
+    "success":    "bold green",
+    "warning":    "bold yellow",
+    "error":      "bold red",
+    "user_error": "bold red",
+    "skip":       "white",
+    "bypass":     "bold cyan",
+    "info":       "bright_blue",
+    "muted":      "white",        # paths and commands — visible but not bold
+    "label":      "bold white",   # key labels like 'Command:', 'Logging to:'
 })
 
 console = Console(theme=_theme, highlight=False)

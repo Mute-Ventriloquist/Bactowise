@@ -88,6 +88,7 @@ class SingularityToolRunner(BaseRunner):
     # ── Run ───────────────────────────────────────────────────────────────────
 
     def run(self, fasta: Path) -> Path:
+        console.print()
         self._cprint("Starting annotation inside Singularity...")
 
         sif      = self._sif_path()
@@ -98,9 +99,9 @@ class SingularityToolRunner(BaseRunner):
 
         cmd = [binary, "run"] + binds + ["--writable-tmpfs", str(sif)] + cmd_args
 
-        self._cprint(f"Image:      [muted]{sif}[/muted]")
-        self._cprint(f"Command:    [muted]{' '.join(cmd)}[/muted]")
-        self._cprint(f"Logging to: [muted]{log_file}[/muted]")
+        self._cprint(f"[label]Image:[/label]      [muted]{sif}[/muted]")
+        self._cprint(f"[label]Command:[/label]    [muted]{' '.join(cmd)}[/muted]")
+        self._cprint(f"[label]Logging to:[/label] [muted]{log_file}[/muted]")
 
         with open(log_file, "w") as log:
             result = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, text=True)
@@ -112,6 +113,7 @@ class SingularityToolRunner(BaseRunner):
             )
 
         self._cprint(f"[success]✓ Finished.[/success] Output at: [muted]{self.output_dir}[/muted]")
+        console.print()
         return self.output_dir
 
     # ── Internal helpers ──────────────────────────────────────────────────────

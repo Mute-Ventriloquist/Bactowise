@@ -136,6 +136,7 @@ class PGAPRunner(BaseRunner):
 
     def run(self, fasta: Path) -> Path:
         self._cprint("Starting NCBI PGAP annotation...")
+        console.print()
 
         pgap_bin      = self._find_pgap()
         runtime_bin   = self._find_container_runtime()
@@ -155,11 +156,11 @@ class PGAPRunner(BaseRunner):
 
         run_env = {**os.environ, "PGAP_INPUT_DIR": str(self._pgap_data_dir())}
 
-        self._cprint(f"Organism:   [bold]{organism}[/bold]")
-        self._cprint(f"Runtime:    [muted]{runtime_bin}[/muted]")
-        self._cprint(f"Data dir:   [muted]{self._pgap_data_dir()}[/muted]")
-        self._cprint(f"Command:    [muted]{' '.join(cmd)}[/muted]")
-        self._cprint(f"Logging to: [muted]{log_file}[/muted]")
+        self._cprint(f"[label]Organism:[/label]   [bold]{organism}[/bold]")
+        self._cprint(f"[label]Runtime:[/label]    [muted]{runtime_bin}[/muted]")
+        self._cprint(f"[label]Data dir:[/label]   [muted]{self._pgap_data_dir()}[/muted]")
+        self._cprint(f"[label]Command:[/label]    [muted]{' '.join(cmd)}[/muted]")
+        self._cprint(f"[label]Logging to:[/label] [muted]{log_file}[/muted]")
 
         with open(log_file, "w") as log:
             result = subprocess.run(
@@ -177,6 +178,7 @@ class PGAPRunner(BaseRunner):
             )
 
         self._cprint(f"[success]✓ Finished.[/success] Output at: [muted]{self.output_dir}[/muted]")
+        console.print()
         return self.output_dir
 
     def _build_command(
