@@ -165,7 +165,13 @@ class Pipeline:
         results: dict[str, Path] = {}
         errors:  dict[str, str]  = {}
 
-        for stage_num, stage_tools in enumerate(stages, 1):
+        # Build the true stage numbers by taking the full sequence (1..N+skipped)
+        # and removing the skipped ones. This works correctly regardless of which
+        # stages are skipped or how many there are.
+        total_stages = len(stages) + len(self.skip_stages)
+        running_stage_nums = [n for n in range(1, total_stages + 1) if n not in self.skip_stages]
+
+        for stage_num, stage_tools in zip(running_stage_nums, stages):
             stage_rule(stage_num, stage_tools)
 
             bypass_tools = [name for name in stage_tools if name in self.gff_files]
