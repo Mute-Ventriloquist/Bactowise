@@ -80,7 +80,11 @@ environments, container images, and all required databases. Just run it.
 > `bactowise db download` and `bactowise db download --pgap` — see the
 > [User Guide](DOCS.md#2-databases) for details.
 
-Results land in `./results/` with subdirectories for each tool.
+Results land in `./results/` by default. Use `-o` to write to a different location:
+
+```bash
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" -o /scratch/my_run
+```
 
 **Skip the QC stage** (stage 1 is the only skippable stage):
 ```bash

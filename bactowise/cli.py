@@ -199,6 +199,14 @@ def run(
             "Required by PGAP. Also improves labelling in Prokka and Bakta."
         ),
     ),
+    output_dir: Path = typer.Option(
+        None, "-o", "--output",
+        help=(
+            "Output directory for all results. "
+            "Defaults to ./results in the current working directory. "
+            "Created automatically if it does not exist."
+        ),
+    ),
     skip: list[str] = typer.Option(
         [], "--skip",
         help=(
@@ -249,6 +257,7 @@ def run(
     \b
     Examples:
       bactowise run -f genome.fasta -n "Mycoplasmoides genitalium"
+      bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" -o /scratch/my_run
       bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_1
       bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_1 --gff pgap:/path/to/pgap.gff
     """
@@ -296,6 +305,8 @@ def run(
     console.print(f"  [label]Genome[/label]   : [muted]{fasta}[/muted]")
     console.print(f"  [label]Organism[/label] : [bold]{organism}[/bold]")
     console.print(f"  [label]Config[/label]   : [muted]{config_path}[/muted]")
+    if output_dir:
+        console.print(f"  [label]Output[/label]   : [muted]{output_dir.resolve()}[/muted]")
     if skip_stages:
         console.print(f"  [label]Skip[/label]     : [warning]{', '.join(f'stage_{s}' for s in sorted(skip_stages))}[/warning]")
     if gff_files:
@@ -304,6 +315,15 @@ def run(
 
     try:
         pipeline_config = load_config(config_path)
+
+        # Override output_dir if the user supplied -o / --output.
+        # model_copy(update=...) returns a new validated instance — the original
+        # config object and the pipeline.yaml file are never modified.
+        if output_dir is not None:
+            pipeline_config = pipeline_config.model_copy(
+                update={"output_dir": output_dir.resolve()}
+            )
+
         pipeline = Pipeline(
             pipeline_config,
             skip_stages=skip_stages,

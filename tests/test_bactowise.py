@@ -258,6 +258,18 @@ class TestOrganismPropagation:
         pipeline = Pipeline(config)
         assert pipeline.runners["prokka"].global_threads == 8
 
+    def test_output_dir_override_via_model_copy(self, tmp_path):
+        """model_copy(update=...) correctly overrides output_dir without mutating original."""
+        from bactowise.models.config import PipelineConfig
+        config = PipelineConfig(
+            tools=[{"name": "prokka", "version": "1.14.6", "runtime": "conda"}],
+            output_dir=str(tmp_path / "default"),
+        )
+        custom = tmp_path / "custom_output"
+        overridden = config.model_copy(update={"output_dir": custom.resolve()})
+        assert overridden.output_dir == custom.resolve()
+        assert config.output_dir == (tmp_path / "default").resolve()  # original unchanged
+
 
 # ─── Global threads fallback tests ───────────────────────────────────────────
 

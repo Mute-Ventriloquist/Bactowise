@@ -4,7 +4,7 @@
   - [1. Installation](#1-installation)
   - [2. Databases](#2-databases)
   - [3. Running the pipeline](#3-running-the-pipeline)
-  - [4. Skipping tools](#4-skipping-tools)
+  - [4. Skipping stages](#4-skipping-stages)
   - [5. Bypassing annotation with pre-computed GFF files](#5-bypassing-annotation-with-pre-computed-gff-files)
   - [6. Understanding QC output](#6-understanding-qc-output)
   - [7. Downstream analysis — pangenome with Panaroo](#7-downstream-analysis--pangenome-with-panaroo)
@@ -202,12 +202,32 @@ On first run, BactoWise will automatically:
   `bactowise db download --pgap` explicitly before your first run rather
   than relying on the automatic download.
 
+### Specifying an output directory
+
+By default, results are written to `./results/` in the current working
+directory. Use `-o`/`--output` to write to a different location:
+
+```bash
+bactowise run -f mgenitalium.fasta -n "Mycoplasmoides genitalium" -o /scratch/my_project
+```
+
+The directory is created automatically if it does not exist. This is
+particularly useful on HPC clusters where you want results on a scratch
+filesystem, or when running multiple genomes and keeping each run's output
+in its own directory:
+
+```bash
+bactowise run -f genome1.fasta -n "Escherichia coli"        -o results/ecoli
+bactowise run -f genome2.fasta -n "Staphylococcus aureus"   -o results/saureus
+```
+
 ### Output layout
 
-With all tools active (CheckM + Prokka + Bakta + PGAP):
+With all tools active (CheckM + Prokka + Bakta + PGAP), using the default
+output directory or one specified with `-o`:
 
 ```
-results/
+<output_dir>/
 ├── checkm/
 │   ├── checkm_summary.tsv   ← completeness & contamination metrics
 │   ├── checkm_out/          ← full CheckM output directory
