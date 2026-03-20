@@ -82,5 +82,29 @@ tools:
       report_usage: false    # false = pass -n to pgap.py (no anonymous usage reporting)
       # pgap_input_dir: "~/.bactowise/databases/pgap"  # override default data dir if needed
 
+# ── Consensus Engine (Stage 3) ────────────────────────────────────────────────
+# The BactoWise Consensus Engine merges annotations from Bakta, Prokka, and
+# PGAP into a single consensus source of truth.
+#
+# It depends on all three stage 2 annotation tools. BactoWise automatically
+# collects their outputs, stages them with tool-name-prefixed filenames, and
+# invokes the engine via 'conda run -n consensus_env python consensus_engine.py'.
+#
+# The consensus_env conda environment is created automatically on first run.
+# It requires only pandas and openpyxl (for .xlsx output).
+
+  - name: consensus
+    version: "1.0.0"
+    runtime: conda
+    depends_on: [bakta, prokka, pgap]
+    conda_env:
+      name: "consensus_env"
+      channels:
+        - conda-forge
+        - defaults
+      dependencies:
+        - pandas
+        - openpyxl
+
 output_dir: "./results"
 threads: 4

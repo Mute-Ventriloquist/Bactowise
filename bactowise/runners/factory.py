@@ -6,6 +6,7 @@ from bactowise.models.config import ToolConfig
 from bactowise.runners.base import BaseRunner
 from bactowise.runners.checkm_runner import CheckMRunner
 from bactowise.runners.conda_runner import CondaToolRunner
+from bactowise.runners.consensus_runner import ConsensusRunner
 from bactowise.runners.docker_runner import DockerToolRunner
 from bactowise.runners.pgap_runner import PGAPRunner
 from bactowise.runners.singularity_runner import SingularityToolRunner
@@ -24,6 +25,8 @@ class RunnerFactory:
             return CheckMRunner(tool_config, output_dir, organism, global_threads)
         if tool_config.name == "pgap":
             return PGAPRunner(tool_config, output_dir, organism, global_threads)
+        if tool_config.name == "consensus":
+            return ConsensusRunner(tool_config, output_dir, organism, global_threads)
 
         if tool_config.runtime == "conda":
             return CondaToolRunner(tool_config, output_dir, organism, global_threads)

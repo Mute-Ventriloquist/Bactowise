@@ -7,8 +7,9 @@
   - [4. Skipping stages](#4-skipping-stages)
   - [5. Bypassing annotation with pre-computed GFF files](#5-bypassing-annotation-with-pre-computed-gff-files)
   - [6. Understanding QC output](#6-understanding-qc-output)
-  - [7. Downstream analysis — pangenome with Panaroo](#7-downstream-analysis--pangenome-with-panaroo)
-  - [8. Troubleshooting](#8-troubleshooting)
+  - [7. Stage 3 — BactoWise Consensus Engine](#7-stage-3--bactowise-consensus-engine)
+  - [8. Downstream analysis — pangenome with Panaroo](#8-downstream-analysis--pangenome-with-panaroo)
+  - [9. Troubleshooting](#9-troubleshooting)
 - [Developer Guide](#developer-guide)
   - [1. pipeline.yaml field reference](#1-pipelineyaml-field-reference)
   - [2. Modifying pipeline.yaml locally](#2-modifying-pipelineyaml-locally)
@@ -243,13 +244,28 @@ output directory or one specified with `-o`:
 │   ├── *.gbff
 │   └── logs/
 │       └── bakta.log
-└── pgap/                    ← only present when PGAP is active
-    ├── run_<timestamp>/     ← pgap.py creates a timestamped output directory
-    │   ├── annot.gff
-    │   ├── annot.gbk
-    │   └── cwltool.log      ← detailed pgap.py execution log
+├── pgap/                    ← only present when PGAP is active
+│   ├── run_<timestamp>/     ← pgap.py creates a timestamped output directory
+│   │   ├── annot.gff
+│   │   ├── annot.gbk
+│   │   └── cwltool.log      ← detailed pgap.py execution log
+│   └── logs/
+│       └── pgap.log
+└── consensus/               ← Stage 3: BactoWise Consensus Engine
+    ├── stage3_input/        ← staging folder (kept for debugging)
+    │   ├── bakta_annotation.gff3
+    │   ├── prokka_annotation.gff
+    │   ├── pgap_annotation.gff
+    │   └── <genome>.fasta
+    ├── Master_Table_Annotation.xlsx
+    ├── <prefix>.gff3
+    ├── <prefix>.gbk
+    ├── <prefix>.faa
+    ├── <prefix>.fna
+    ├── summary_report.txt
+    ├── pipeline.log
     └── logs/
-        └── pgap.log
+        └── consensus.log
 ```
 
 ---
@@ -422,7 +438,75 @@ QC thresholds can be adjusted in the installed config (`~/.bactowise/config/pipe
 
 ---
 
-## 7. Downstream analysis — pangenome with Panaroo
+## 7. Stage 3 — BactoWise Consensus Engine
+
+Stage 3 runs automatically after all three stage 2 annotation tools (Bakta,
+Prokka, PGAP) complete. It merges their outputs into a single high-confidence
+consensus annotation.
+
+### What it does
+
+The consensus engine resolves disagreements between the three annotation tools
+by computing confidence scores and consensus levels (e.g. `Consensus_2/3`,
+`Consensus_3/3`). It produces a comprehensive annotation table alongside
+standard bioinformatics output formats compatible with Geneious, SnapGene, and
+downstream pangenome tools like Panaroo.
+
+### Inputs (staged automatically by BactoWise)
+
+BactoWise collects the GFF outputs from stage 2 into a staging folder
+(`<output_dir>/consensus/stage3_input/`) and renames them with tool-name
+prefixes that the engine requires:
+
+| Staged filename | Source |
+|---|---|
+| `bakta_annotation.gff3` | Bakta stage 2 output (or `--gff bakta:` bypass) |
+| `prokka_annotation.gff` | Prokka stage 2 output (or `--gff prokka:` bypass) |
+| `pgap_annotation.gff` | PGAP stage 2 output (or `--gff pgap:` bypass) |
+| `<genome>.fasta` | Original input FASTA |
+
+The staging folder is kept after the run for debugging purposes.
+
+### Outputs
+
+All outputs are written to `<output_dir>/consensus/`:
+
+| File | Description |
+|---|---|
+| `Master_Table_Annotation.xlsx` | Primary consensus table with confidence scores and functional categories |
+| `<prefix>.gff3` | Cleaned coordinates compatible with Geneious and SnapGene |
+| `<prefix>.gbk` | GenBank flat file with full sequences and feature qualifiers |
+| `<prefix>.faa` | Protein FASTA (high-confidence CDS only; excludes pseudogenes and sequences < 90 bp) |
+| `<prefix>.fna` | Nucleotide CDS sequences |
+| `summary_report.txt` | Pipeline statistics, HP rates, and tool agreement |
+| `pipeline.log` | Full execution history and error tracking |
+
+### Dependencies
+
+The consensus engine requires Python with `pandas` and `openpyxl`. BactoWise
+creates a dedicated `consensus_env` conda environment on first run — no manual
+setup is needed.
+
+### Stage 3 cannot be skipped
+
+The consensus engine is the core output of BactoWise and cannot be skipped.
+Attempting `--skip stage_3` raises an error immediately.
+
+### Stage 3 requires all three stage 2 tools
+
+If any stage 2 tool fails, the pipeline exits before reaching stage 3. The
+`--gff` bypass can be used to provide pre-computed GFF files for any failed or
+previously-run tools so that stage 3 can proceed:
+
+```bash
+# Provide a pre-computed PGAP result and let Bakta and Prokka run normally
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
+  --gff pgap:/path/to/pgap/annot.gff
+```
+
+---
+
+## 8. Downstream analysis — pangenome with Panaroo
 
 Panaroo is a pangenome pipeline that takes GFF annotation files as input and
 computes core and accessory genome statistics across multiple bacterial isolates.
@@ -482,7 +566,7 @@ all available options.
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | Error | Fix |
 |---|---|

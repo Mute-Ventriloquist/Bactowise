@@ -5,6 +5,7 @@ Assess bacterial genome quality and annotate genes — one command, one config f
 ```
 Stage 1:  CheckM                 → completeness & contamination check
 Stage 2:  Prokka + Bakta + PGAP  → gene annotation (run in parallel)
+Stage 3:  Consensus Engine       → merge annotations into a single source of truth
 ```
 
 If the genome fails QC thresholds, BactoWise warns you and continues — the scientist makes the final call.

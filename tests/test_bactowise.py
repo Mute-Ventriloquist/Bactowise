@@ -714,3 +714,192 @@ class TestGFFBypass:
         assert "prokka" in results
         assert (results["bakta"]  / "provided_bakta.gff3").exists()
         assert (results["prokka"] / "provided_prokka.gff").exists()
+
+
+# ─── ConsensusRunner tests ────────────────────────────────────────────────────
+
+class TestConsensusRunner:
+    """
+    Tests for ConsensusRunner — GFF discovery, staging, and command building.
+    No real tools or conda envs are needed.
+    """
+
+    def _make_tool_config(self) -> ToolConfig:
+        return ToolConfig(
+            name="consensus",
+            version="1.0.0",
+            runtime="conda",
+            depends_on=["bakta", "prokka", "pgap"],
+            conda_env={"name": "consensus_env", "dependencies": ["pandas", "openpyxl"]},
+        )
+
+    def test_factory_returns_consensus_runner(self, tmp_path):
+        from bactowise.runners.consensus_runner import ConsensusRunner
+        tool = self._make_tool_config()
+        runner = RunnerFactory.create(tool, tmp_path)
+        assert isinstance(runner, ConsensusRunner)
+
+    def test_find_bakta_gff_normal_run(self, tmp_path):
+        from bactowise.runners.consensus_runner import ConsensusRunner
+        tool = self._make_tool_config()
+        runner = ConsensusRunner(tool, tmp_path)
+
+        # Simulate normal Bakta output
+        bakta_dir = tmp_path / "bakta"
+        bakta_dir.mkdir()
+        gff = bakta_dir / "mgenitalium.gff3"
+        gff.touch()
+
+        result = runner._find_bakta_gff(bakta_dir)
+        assert result == gff
+
+    def test_find_bakta_gff_bypass(self, tmp_path):
+        from bactowise.runners.consensus_runner import ConsensusRunner
+        tool = self._make_tool_config()
+        runner = ConsensusRunner(tool, tmp_path)
+
+        bakta_dir = tmp_path / "bakta"
+        bakta_dir.mkdir()
+        gff = bakta_dir / "provided_bakta.gff3"
+        gff.touch()
+
+        result = runner._find_bakta_gff(bakta_dir)
+        assert result == gff
+
+    def test_find_bakta_gff_not_found_raises(self, tmp_path):
+        from bactowise.runners.consensus_runner import ConsensusRunner
+        tool = self._make_tool_config()
+        runner = ConsensusRunner(tool, tmp_path)
+
+        bakta_dir = tmp_path / "bakta"
+        bakta_dir.mkdir()
+
+        with pytest.raises(RuntimeError, match="No Bakta GFF"):
+            runner._find_bakta_gff(bakta_dir)
+
+    def test_find_prokka_gff_normal_run(self, tmp_path):
+        from bactowise.runners.consensus_runner import ConsensusRunner
+        tool = self._make_tool_config()
+        runner = ConsensusRunner(tool, tmp_path)
+
+        prokka_dir = tmp_path / "prokka"
+        prokka_dir.mkdir()
+        gff = prokka_dir / "prokka_output.gff"
+        gff.touch()
+
+        result = runner._find_prokka_gff(prokka_dir)
+        assert result == gff
+
+    def test_find_prokka_gff_bypass(self, tmp_path):
+        from bactowise.runners.consensus_runner import ConsensusRunner
+        tool = self._make_tool_config()
+        runner = ConsensusRunner(tool, tmp_path)
+
+        prokka_dir = tmp_path / "prokka"
+        prokka_dir.mkdir()
+        gff = prokka_dir / "provided_prokka_output.gff"
+        gff.touch()
+
+        result = runner._find_prokka_gff(prokka_dir)
+        assert result == gff
+
+    def test_find_pgap_gff_normal_run_picks_most_recent(self, tmp_path):
+        from bactowise.runners.consensus_runner import ConsensusRunner
+        tool = self._make_tool_config()
+        runner = ConsensusRunner(tool, tmp_path)
+
+        pgap_dir = tmp_path / "pgap"
+        pgap_dir.mkdir()
+
+        # Create two run dirs — most recent should be picked
+        older = pgap_dir / "run_1000000000"
+        newer = pgap_dir / "run_2000000000"
+        for d in (older, newer):
+            d.mkdir()
+            (d / "annot.gff").touch()
+
+        result = runner._find_pgap_gff(pgap_dir)
+        assert result == newer / "annot.gff"
+
+    def test_find_pgap_gff_bypass(self, tmp_path):
+        from bactowise.runners.consensus_runner import ConsensusRunner
+        tool = self._make_tool_config()
+        runner = ConsensusRunner(tool, tmp_path)
+
+        pgap_dir = tmp_path / "pgap"
+        pgap_dir.mkdir()
+        gff = pgap_dir / "provided_annot.gff"
+        gff.touch()
+
+        result = runner._find_pgap_gff(pgap_dir)
+        assert result == gff
+
+    def test_find_pgap_gff_not_found_raises(self, tmp_path):
+        from bactowise.runners.consensus_runner import ConsensusRunner
+        tool = self._make_tool_config()
+        runner = ConsensusRunner(tool, tmp_path)
+
+        pgap_dir = tmp_path / "pgap"
+        pgap_dir.mkdir()
+
+        with pytest.raises(RuntimeError, match="No PGAP GFF"):
+            runner._find_pgap_gff(pgap_dir)
+
+    def test_build_engine_command_includes_key_args(self, tmp_path):
+        from bactowise.runners.consensus_runner import ConsensusRunner, _ENGINE_PATH
+        tool = self._make_tool_config()
+        runner = ConsensusRunner(tool, tmp_path)
+
+        staging = tmp_path / "staging"
+        output  = tmp_path / "consensus"
+
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_engine_command(staging, output)
+
+        assert "/usr/bin/conda" in cmd
+        assert "consensus_env" in cmd
+        assert "python" in cmd
+        assert str(_ENGINE_PATH) in cmd
+        assert "--input" in cmd
+        assert str(staging) in cmd
+        assert "--output" in cmd
+        assert str(output) in cmd
+
+    def test_consensus_in_pipeline_stages_as_stage_3(self, tmp_path):
+        """consensus must appear in stage 3 (after bakta, prokka, pgap)."""
+        config = PipelineConfig(**{
+            "tools": [
+                {"name": "checkm",    "version": "1.2.3",            "runtime": "conda", "role": "qc"},
+                {"name": "prokka",    "version": "1.14.6",            "runtime": "conda", "depends_on": ["checkm"]},
+                {"name": "bakta",     "version": "1.9.3",             "runtime": "docker",
+                 "image": "oschwengers/bakta:1.9.3",                  "depends_on": ["checkm"]},
+                {"name": "pgap",      "version": "2024-07-18.build7555", "runtime": "pgap", "depends_on": ["checkm"]},
+                {"name": "consensus", "version": "1.0.0",             "runtime": "conda",
+                 "depends_on": ["bakta", "prokka", "pgap"],
+                 "conda_env": {"name": "consensus_env", "dependencies": ["pandas", "openpyxl"]}},
+            ],
+            "output_dir": str(tmp_path),
+        })
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config)
+
+        stages = pipeline._build_stages()
+        # stage 1: checkm, stage 2: prokka+bakta+pgap, stage 3: consensus
+        assert stages[0] == ["checkm"]
+        assert set(stages[1]) == {"prokka", "bakta", "pgap"}
+        assert stages[2] == ["consensus"]
+
+    def test_consensus_not_skippable(self, tmp_path):
+        """Stage 3 contains consensus — attempting --skip stage_3 must raise."""
+        config = PipelineConfig(**{
+            "tools": [
+                {"name": "prokka",    "version": "1.14.6", "runtime": "conda"},
+                {"name": "consensus", "version": "1.0.0",  "runtime": "conda",
+                 "depends_on": ["prokka"],
+                 "conda_env": {"name": "consensus_env", "dependencies": ["pandas"]}},
+            ],
+            "output_dir": str(tmp_path),
+        })
+        with pytest.raises(ValueError, match="cannot be skipped"):
+            Pipeline(config, skip_stages={3})
