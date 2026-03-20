@@ -26,10 +26,10 @@ from rich.theme import Theme
 # a parallel run where lines from different tools are interleaved.
 
 _TOOL_COLOURS: dict[str, str] = {
-    "checkm":   "yellow",
-    "prokka":   "green",
-    "bakta":    "cyan",
-    "pgap":     "magenta",
+    "checkm":    "yellow",
+    "prokka":    "bright_blue",
+    "bakta":     "bright_magenta",
+    "pgap":      "magenta",
     "preflight": "bright_blue",
 }
 _DEFAULT_TOOL_COLOUR = "bright_blue"
