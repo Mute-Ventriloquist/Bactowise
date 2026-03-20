@@ -201,16 +201,16 @@ def run(
     skip: list[str] = typer.Option(
         [], "--skip",
         help=(
-            "Skip a tool by name. Repeatable. "
-            "Dependents still run; a warning is shown if a QC tool is skipped."
+            "Skip a pipeline stage. Only 'stage_1' (QC) can be skipped. "
+            "Stage 2 (annotation) cannot be skipped."
         ),
     ),
     gff: list[str] = typer.Option(
         [], "--gff",
         help=(
-            "Provide a pre-computed GFF file for a tool, bypassing stage 2. "
+            "Provide a pre-computed GFF file for an annotation tool. "
             "Format: 'tool:path'  (e.g. --gff bakta:/results/bakta.gff3). "
-            "Repeatable. Must supply for ALL annotation tools or NONE."
+            "Repeatable. Any subset of annotation tools may be bypassed."
         ),
     ),
 ):
@@ -222,8 +222,8 @@ def run(
 
     \b
     Runs tools in dependency order. Within each stage, tools run in parallel:
-      Stage 1: checkm                    — quality gate
-      Stage 2: prokka + bakta + pgap     — annotation (parallel)
+      Stage 1: checkm                    -- quality gate (skippable)
+      Stage 2: prokka + bakta + pgap     -- annotation (cannot be skipped)
 
     \b
     The organism name (-n) must be a valid NCBI Taxonomy name. It is passed
@@ -235,18 +235,21 @@ def run(
     created automatically. Databases are downloaded if not already present.
 
     \b
-    GFF bypass — skip stage 2 by providing pre-computed annotation files.
-    Must provide GFF for ALL annotation tools or NONE (no partial bypass):
+    Skip the QC stage entirely with --skip stage_1:
+      bactowise run -f genome.fasta -n "Escherichia coli" --skip stage_1
+
+    \b
+    GFF bypass -- provide pre-computed annotation for any subset of tools.
+    Tools without a GFF still run and compute their annotation normally:
       bactowise run -f genome.fasta -n "Escherichia coli" \\
         --gff bakta:/path/to/bakta.gff3 \\
-        --gff prokka:/path/to/prokka.gff \\
-        --gff pgap:/path/to/pgap.gff
+        --gff prokka:/path/to/prokka.gff
 
     \b
     Examples:
       bactowise run -f genome.fasta -n "Mycoplasmoides genitalium"
-      bactowise run -f genome.fasta -n "Escherichia coli" --skip checkm
-      bactowise run -f genome.fasta -n "Staphylococcus aureus" --skip pgap
+      bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_1
+      bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_1 --gff pgap:/path/to/pgap.gff
     """
     # Ensure the config is installed; install it automatically on first run
     # so 'bactowise run' works without requiring an explicit 'bactowise init'
@@ -255,6 +258,28 @@ def run(
     except RuntimeError as e:
         typer.echo(f"\n✗ {e}", err=True)
         raise typer.Exit(code=1)
+
+    # Parse and validate --skip stage_N entries
+    skip_stages: set[int] = set()
+    valid_stage_pattern = {"stage_1", "stage_2", "stage_3"}  # extend as needed
+    for entry in skip:
+        if not entry.startswith("stage_"):
+            typer.echo(
+                f"\n✗ Invalid --skip value: '{entry}'\n"
+                f"  Expected a stage identifier, e.g. --skip stage_1",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        try:
+            stage_num = int(entry.split("_", 1)[1])
+        except (IndexError, ValueError):
+            typer.echo(
+                f"\n✗ Invalid --skip value: '{entry}'\n"
+                f"  Expected format: stage_<number>  (e.g. stage_1)",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        skip_stages.add(stage_num)
 
     # Parse --gff tool:path entries
     gff_files: dict[str, Path] = {}
@@ -273,8 +298,8 @@ def run(
     typer.echo(f"  Genome   : {fasta}")
     typer.echo(f"  Organism : {organism}")
     typer.echo(f"  Config   : {config_path}")
-    if skip:
-        typer.echo(f"  Skip     : {', '.join(skip)}")
+    if skip_stages:
+        typer.echo(f"  Skip     : {', '.join(f'stage_{s}' for s in sorted(skip_stages))}")
     if gff_files:
         typer.echo(f"  GFF      : {', '.join(f'{t}:{p}' for t, p in gff_files.items())}")
     typer.echo()
@@ -283,7 +308,7 @@ def run(
         pipeline_config = load_config(config_path)
         pipeline = Pipeline(
             pipeline_config,
-            skip=set(skip),
+            skip_stages=skip_stages,
             gff_files=gff_files or None,
             organism=organism,
         )

@@ -423,12 +423,12 @@ class TestCondaEnvField:
 
 class TestPipelineSkip:
     """
-    Tests for the --skip / Pipeline(skip=...) feature.
+    Tests for the --skip stage_N / Pipeline(skip_stages=...) feature.
     All tests mock runners so no real tools are needed.
     """
 
     def _make_config(self, tmp_path) -> "PipelineConfig":
-        """Three-tool config: checkm → prokka + bakta (mirrors the real pipeline)."""
+        """Three-tool config: checkm (stage 1) -> prokka + bakta (stage 2)."""
         return PipelineConfig(**{
             "tools": [
                 {
@@ -454,39 +454,53 @@ class TestPipelineSkip:
             "output_dir": str(tmp_path),
         })
 
-    def test_skip_unknown_tool_raises(self, tmp_path):
-        config = self._make_config(tmp_path)
-        with pytest.raises(ValueError, match="Unknown tool"):
-            Pipeline(config, skip={"nonexistent_tool"})
-
-    def test_skip_removes_tool_from_runners(self, tmp_path):
+    def test_skip_invalid_stage_format_raises(self, tmp_path):
+        """Passing a tool name instead of a stage number should raise."""
         config = self._make_config(tmp_path)
         with patch("docker.from_env") as mock_docker:
             mock_docker.return_value.ping.return_value = True
-            pipeline = Pipeline(config, skip={"checkm"})
+            with pytest.raises((ValueError, TypeError)):
+                Pipeline(config, skip_stages={"checkm"})  # type: ignore
+
+    def test_skip_stage_2_raises(self, tmp_path):
+        """Attempting to skip stage 2 (annotation) must raise immediately."""
+        config = self._make_config(tmp_path)
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            with pytest.raises(ValueError, match="cannot be skipped"):
+                Pipeline(config, skip_stages={2})
+
+    def test_skip_stage_1_removes_qc_from_runners(self, tmp_path):
+        """skip_stages={1} must exclude checkm from runners."""
+        config = self._make_config(tmp_path)
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, skip_stages={1})
         assert "checkm" not in pipeline.runners
         assert "prokka" in pipeline.runners
         assert "bakta" in pipeline.runners
 
-    def test_skip_all_annotation_tools(self, tmp_path):
+    def test_skip_stage_1_resolves_to_correct_tool_names(self, tmp_path):
+        """skip_stages={1} should resolve self.skip to the QC tool names."""
         config = self._make_config(tmp_path)
-        pipeline = Pipeline(config, skip={"prokka", "bakta"})
-        assert "prokka" not in pipeline.runners
-        assert "bakta"  not in pipeline.runners
-        assert "checkm" in pipeline.runners
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, skip_stages={1})
+        assert "checkm" in pipeline.skip
+        assert "prokka" not in pipeline.skip
+        assert "bakta" not in pipeline.skip
 
-    def test_skip_unblocks_dependents(self, tmp_path):
+    def test_skip_stage_1_unblocks_dependents(self, tmp_path):
         """
-        Skipping checkm should place prokka and bakta in stage 0
-        (treated as if their dependency is already satisfied).
+        skip_stages={1} should place prokka and bakta in stage 1 of the
+        build output (treated as if their dependency is already satisfied).
         """
         config = self._make_config(tmp_path)
         with patch("docker.from_env") as mock_docker:
             mock_docker.return_value.ping.return_value = True
-            pipeline = Pipeline(config, skip={"checkm"})
+            pipeline = Pipeline(config, skip_stages={1})
 
         stages = pipeline._build_stages()
-        # All remaining tools should land in one stage with no ordering issue
         all_staged = [tool for stage in stages for tool in stage]
         assert "prokka" in all_staged
         assert "bakta"  in all_staged
@@ -497,17 +511,18 @@ class TestPipelineSkip:
         config = self._make_config(tmp_path)
         with patch("docker.from_env") as mock_docker:
             mock_docker.return_value.ping.return_value = True
-            pipeline = Pipeline(config, skip=set())
+            pipeline = Pipeline(config, skip_stages=set())
 
         stages = pipeline._build_stages()
         assert stages[0] == ["checkm"]
         assert set(stages[1]) == {"prokka", "bakta"}
 
     def test_skip_empty_set_is_a_noop(self, tmp_path):
+        """skip_stages=set() should leave all runners intact."""
         config = self._make_config(tmp_path)
         with patch("docker.from_env") as mock_docker:
             mock_docker.return_value.ping.return_value = True
-            pipeline = Pipeline(config, skip=set())
+            pipeline = Pipeline(config, skip_stages=set())
         assert set(pipeline.runners.keys()) == {"checkm", "prokka", "bakta"}
 
 
@@ -622,13 +637,22 @@ class TestGFFBypass:
             Pipeline(config, gff_files={"checkm": fake})
 
     def test_gff_and_skip_same_tool_raises(self, tmp_path):
-        """Same tool in both --gff and --skip is contradictory — must raise."""
+        """A GFF tool name that is also in the skipped set is contradictory."""
         config = self._make_config(tmp_path)
         gff_files = self._make_gff_files(tmp_path)
+        # skip_stages={1} skips checkm; gff_files covers bakta+prokka (annotation
+        # tools) -- no overlap, so this should NOT raise.
+        # To trigger the conflict we need to contrive a situation where the
+        # resolved self.skip overlaps with gff_files keys, which cannot happen
+        # via the public API (stage 1 = QC tools, gff = annotation tools only).
+        # The internal guard still exists; test it directly via _validate_gff_files.
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, skip_stages={1}, gff_files=gff_files)
+        # Manually inject a fake overlap and confirm the guard fires
+        pipeline.skip.add("bakta")
         with pytest.raises(ValueError, match="both --gff and --skip"):
-            with patch("docker.from_env") as mock_docker:
-                mock_docker.return_value.ping.return_value = True
-                Pipeline(config, skip={"bakta"}, gff_files=gff_files)
+            pipeline._validate_gff_files(gff_files)
 
     def test_gff_missing_file_raises(self, tmp_path):
         """GFF path that does not exist on disk must raise FileNotFoundError."""

@@ -82,10 +82,9 @@ environments, container images, and all required databases. Just run it.
 
 Results land in `./results/` with subdirectories for each tool.
 
-**Skip a tool** (e.g. if QC has already been done, or to skip PGAP for a quick run):
+**Skip the QC stage** (stage 1 is the only skippable stage):
 ```bash
-bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip checkm
-bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip pgap
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_1
 ```
 
 **Bypass annotation with pre-computed GFF files:**

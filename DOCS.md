@@ -234,37 +234,44 @@ results/
 
 ---
 
-## 4. Skipping tools
+## 4. Skipping stages
 
-Use `--skip` to exclude a tool from a run without editing the config file.
-The flag accepts any tool name defined in the active config and can be repeated.
+Use `--skip stage_1` to skip the QC stage entirely. Stage 1 (CheckM) is the
+only stage that can be skipped — stage 2 (annotation) is the core of the
+pipeline and cannot be skipped.
 
 ```bash
-# Skip QC if the genome has already been assessed
-bactowise run -f genome.fasta -n "Escherichia coli" --skip checkm
-
-# Skip PGAP for a faster run (Prokka and Bakta still run)
-bactowise run -f genome.fasta -n "Escherichia coli" --skip pgap
-
-# Skip all annotation and run QC only
-bactowise run -f genome.fasta -n "Escherichia coli" --skip prokka --skip bakta --skip pgap
+# Skip QC — annotation still runs without the quality gate
+bactowise run -f genome.fasta -n "Escherichia coli" --skip stage_1
 ```
 
-**What happens when you skip a tool:**
-- The tool is excluded from preflight checks (Docker is not contacted, conda
-  env is not inspected for that tool)
-- Downstream tools that depend on the skipped tool are automatically unblocked
-  and run as normal
-- If the skipped tool has `role: qc`, a warning is printed before annotation
-  begins to make clear that no quality gate was applied
-- The final summary shows `⊘ checkm → skipped` so the record of the run is
-  unambiguous
+**When to skip stage 1:**
+- The genome has already been assessed and you're confident in its quality
+- You are running a quick test and want to skip the ~2 GB CheckM database download
+- You have QC results from another tool and just want annotation
 
-**Typos are caught immediately:**
+**What happens when you skip stage 1:**
+- CheckM is excluded from preflight checks entirely (no conda env check, no database check)
+- Annotation tools (Prokka, Bakta, PGAP) run immediately without waiting for a QC result
+- A warning is printed before annotation begins to make clear that no quality gate was applied
+- The final summary shows `⊘ checkm → skipped (stage 1)` so the record is unambiguous
+
+**Attempting to skip stage 2 raises an error immediately:**
 ```
-✗ Error: Unknown tool(s) in --skip: chekm.
-  Available tools: bakta, checkm, prokka
+✗ Stage(s) [2] cannot be skipped.
+  Only stage 1 (QC) may be skipped via --skip stage_1.
+  Stage 2 and beyond contain the core annotation tools (bakta, pgap, prokka)
+  and cannot be skipped.
 ```
+
+**Combining with --gff** (the maximalist use case — skip QC and bypass some annotation tools):
+```bash
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
+  --skip stage_1 \
+  --gff pgap:/path/to/pgap.gff
+```
+This skips CheckM entirely and uses a pre-computed PGAP result, while Prokka
+and Bakta still run normally.
 
 ---
 
