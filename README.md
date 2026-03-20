@@ -90,12 +90,17 @@ bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip pgap
 
 **Bypass annotation with pre-computed GFF files:**
 
-Must provide GFF for all three annotation tools (Prokka, Bakta, PGAP) or none:
+Provide a GFF for any subset of annotation tools — the rest run normally:
 ```bash
+# Bypass all three
 bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff \
   --gff pgap:/path/to/pgap.gff
+
+# Bypass only Prokka — Bakta and PGAP still run
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
+  --gff prokka:/path/to/prokka.gff
 ```
 
 ---

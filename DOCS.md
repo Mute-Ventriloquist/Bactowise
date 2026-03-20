@@ -272,27 +272,22 @@ bactowise run -f genome.fasta -n "Escherichia coli" --skip prokka --skip bakta -
 
 If you already have annotation results from a previous run — or from running
 Bakta, Prokka, or PGAP independently — you can provide those GFF files
-directly and skip stage 2 entirely. CheckM still runs as normal unless you
-also pass `--skip checkm`.
+directly using `--gff`. Any tools you provide a GFF for are bypassed
+entirely; the remaining annotation tools run normally. CheckM still runs as
+normal unless you also pass `--skip checkm`.
 
-### All-or-nothing policy
+### How it works
 
-You must provide GFF files for **all** annotation tools defined in your
-pipeline, or **none** of them. Partial bypass — where some tools run and
-others use pre-computed files — is not permitted and will be rejected with
-a clear error before anything runs.
-
-This policy exists to keep results consistent. Providing all files or none
-ensures each run tells a coherent story. BactoWise runs Prokka, Bakta, and
-PGAP by default — meaning three GFF files are always required for a bypass
-unless one or more tools are excluded with `--skip`. BactoWise derives the
-required set from the active (non-skipped) tools at runtime.
+- You can provide a GFF for **any number** of annotation tools — one, two,
+  or all three.
+- Tools you provide a GFF for are bypassed — no runner is created, no
+  preflight check is run, and no database download is triggered for them.
+- Tools you do **not** provide a GFF for run normally and compute their
+  annotation from scratch.
 
 ### Usage
 
-Since BactoWise runs Prokka, Bakta, and PGAP by default, all three GFF files
-are required for a bypass:
-
+**Bypass all three annotation tools** (full bypass — nothing annotates):
 ```bash
 bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
   --gff bakta:/path/to/bakta.gff3 \
@@ -300,13 +295,15 @@ bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
   --gff pgap:/path/to/pgap.gff
 ```
 
-If you want to bypass only Prokka and Bakta and let PGAP run normally,
-that is not allowed — it violates the all-or-nothing rule. Instead, use
-`--skip pgap` together with the two GFF files:
-
+**Bypass only Prokka** (Bakta and PGAP still run and annotate):
 ```bash
 bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
-  --skip pgap \
+  --gff prokka:/path/to/prokka.gff
+```
+
+**Bypass Bakta and Prokka** (PGAP still runs):
+```bash
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
   --gff bakta:/path/to/bakta.gff3 \
   --gff prokka:/path/to/prokka.gff
 ```
@@ -314,13 +311,12 @@ bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
 Each `--gff` flag takes the format `tool:path`. The tool name must match the
 name in the active config exactly (e.g. `bakta`, `prokka`, `pgap`).
 
-You can also combine `--gff` with `--skip checkm` to bypass both stages:
+You can also combine `--gff` with `--skip checkm` to bypass QC as well:
 
 ```bash
 bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
   --skip checkm \
-  --gff bakta:/path/to/bakta.gff3 \
-  --gff prokka:/path/to/prokka.gff
+  --gff bakta:/path/to/bakta.gff3
 ```
 
 ### What happens to the provided files
@@ -336,24 +332,24 @@ results/
 ├── prokka/
 │   └── provided_prokka.gff    ← copied from your --gff path
 └── pgap/
-    └── provided_pgap.gff      ← copied from your --gff path (if active)
+    └── run_<timestamp>/       ← computed normally (no GFF provided)
+        └── annot.gff
 ```
 
 ### What the pipeline summary shows
 
 ```
-  ⊘  checkm          → skipped
+  ✓  checkm          → results/checkm
   ↩  bakta           → GFF provided
-  ↩  pgap            → GFF provided
   ↩  prokka          → GFF provided
+  ✓  pgap            → results/pgap/run_<timestamp>
 ```
 
 ### Error cases caught before anything runs
 
-**Partial bypass (missing a tool):**
+**GFF for a tool not in the config or not an annotation tool:**
 ```
-✗ GFF files must be provided for ALL annotation tools or NONE.
-  Missing : pgap
+✗ --gff provided for unknown or non-annotation tool(s): chekm.
   Annotation tools in this config: bakta, pgap, prokka
 ```
 

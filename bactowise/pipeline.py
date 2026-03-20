@@ -36,12 +36,26 @@ class Pipeline:
       - Example: skip={"checkm"} → prokka and bakta still run, but without
         the QC gate. A warning is printed before each affected stage.
 
+    GFF bypass:
+      - Pass pre-computed GFF files via gff_files for any subset of annotation
+        tools. The provided files are copied to the standard output directory;
+        tools without a GFF file run normally.
+      - No runner, preflight check, or database download is performed for a
+        bypassed tool — it is treated identically to a skipped tool in that
+        respect.
+      - Any number of annotation tools may be bypassed (1, 2, or all of them).
+
     Example (no skips):
         checkm           → stage 0 (no deps, runs first)
         prokka, bakta    → stage 1 (depend on checkm, run after checkm completes)
 
     Example (skip checkm):
         prokka, bakta    → stage 0 (checkm treated as satisfied, run immediately)
+
+    Example (GFF provided for prokka only):
+        checkm           → stage 0 (runs normally)
+        prokka           → stage 1 (GFF copied, no runner invoked)
+        bakta, pgap      → stage 1 (run normally in parallel with prokka bypass)
     """
 
     def __init__(
@@ -135,19 +149,26 @@ class Pipeline:
         for stage_num, stage_tools in enumerate(stages, 1):
             print(f"\n── Stage {stage_num}: {', '.join(stage_tools)} {'─'*20}\n")
 
-            # If every tool in this stage has a GFF file provided, bypass
-            # execution entirely — copy files to output dirs and move on.
-            if all(name in self.gff_files for name in stage_tools):
-                self._apply_gff_bypass(stage_tools, results)
+            # Split the stage into tools being bypassed via --gff and tools
+            # that need to run. Both halves execute within the same stage so
+            # dependency ordering is preserved.
+            bypass_tools = [name for name in stage_tools if name in self.gff_files]
+            run_tools    = [name for name in stage_tools if name not in self.gff_files]
+
+            # Apply GFF bypass immediately for any bypassed tools in this stage
+            if bypass_tools:
+                self._apply_gff_bypass(bypass_tools, results)
+
+            if not run_tools:
                 continue
 
-            # Warn if any skipped dependency of tools in this stage was a QC tool
-            self._warn_skipped_qc(stage_tools)
+            # Warn if any skipped or GFF-bypassed dependency was a QC tool
+            self._warn_skipped_qc(run_tools)
 
             # Warn if any non-skipped QC dependency failed its thresholds
-            self._warn_qc(stage_tools, results)
+            self._warn_qc(run_tools, results)
 
-            runners_in_stage = [self.runners[name] for name in stage_tools]
+            runners_in_stage = [self.runners[name] for name in run_tools]
 
             with ThreadPoolExecutor(max_workers=len(runners_in_stage)) as executor:
                 future_to_name = {
@@ -186,12 +207,12 @@ class Pipeline:
 
     def _annotation_tools(self) -> set[str]:
         """
-        Return the names of all annotation tools — i.e. tools that are not in
-        stage 0 (they have at least one dependency) and are not being skipped.
+        Return the names of all annotation tools — i.e. tools that have at
+        least one dependency and are not being skipped.
 
-        This set is what --gff files must cover: exactly all of these tools,
-        or none of them. It scales automatically as tools are added to the
-        config — no code change needed when PGAP is uncommented.
+        Used to validate --gff tool names: a GFF file may only be provided
+        for a tool in this set. Scales automatically as tools are added to
+        the config.
         """
         return {
             t.name for t in self.config.tools
@@ -200,11 +221,15 @@ class Pipeline:
 
     def _validate_gff_files(self, gff_files: dict[str, Path]) -> None:
         """
-        Enforce all-or-nothing GFF bypass rules:
+        Validate --gff entries:
 
         1. No tool may appear in both --gff and --skip (contradictory).
-        2. GFF files must be provided for ALL annotation tools or NONE.
+        2. Every tool name in --gff must be a valid annotation tool in the
+           active config (catches typos before anything runs).
         3. Every provided GFF path must exist on disk.
+
+        Any subset of annotation tools may be bypassed — partial bypass is
+        fully supported. Tools without a provided GFF file run normally.
         """
         annotation_tools = self._annotation_tools()
         provided         = set(gff_files.keys())
@@ -219,27 +244,15 @@ class Pipeline:
                 f"its pre-computed output — not both."
             )
 
-        # Rule 2: all-or-nothing
-        if provided and provided != annotation_tools:
-            missing = annotation_tools - provided
-            extra   = provided - annotation_tools
-            lines   = [
-                "GFF files must be provided for ALL annotation tools or NONE.\n"
-            ]
-            if missing:
-                lines.append(
-                    f"  Missing : {', '.join(sorted(missing))}"
-                )
-            if extra:
-                lines.append(
-                    f"  Unknown : {', '.join(sorted(extra))} "
-                    f"(not annotation tools in this config)"
-                )
-            lines.append(
-                f"\n  Annotation tools in this config: "
+        # Rule 2: every --gff tool name must be a known annotation tool
+        unknown = provided - annotation_tools
+        if unknown:
+            raise ValueError(
+                f"--gff provided for unknown or non-annotation tool(s): "
+                f"{', '.join(sorted(unknown))}.\n"
+                f"Annotation tools in this config: "
                 f"{', '.join(sorted(annotation_tools))}"
             )
-            raise ValueError("\n".join(lines))
 
         # Rule 3: files must exist
         for tool_name, path in gff_files.items():
@@ -350,20 +363,22 @@ class Pipeline:
     def _warn_skipped_qc(self, stage_tools: list[str]) -> None:
         """
         Before running a stage, warn if any of its dependencies were skipped
-        AND those dependencies had role=qc. The user is running annotation
-        without a quality gate — they should know.
+        OR bypassed via --gff AND those dependencies had role=qc. The user is
+        running annotation without a quality gate — they should know.
         """
         tool_configs = {t.name: t for t in self.config.tools}
+        exempted = self.skip | set(self.gff_files.keys())
 
         warned: set[str] = set()
         for tool_name in stage_tools:
             for dep_name in tool_configs[tool_name].depends_on:
-                if dep_name not in self.skip or dep_name in warned:
+                if dep_name not in exempted or dep_name in warned:
                     continue
                 dep_config = tool_configs.get(dep_name)
                 if dep_config and dep_config.role == "qc":
+                    reason = "skipped" if dep_name in self.skip else "bypassed via --gff"
                     print(
-                        f"  ⚠  Warning: QC tool '{dep_name}' was skipped.\n"
+                        f"  ⚠  Warning: QC tool '{dep_name}' was {reason}.\n"
                         f"     '{tool_name}' is running without a genome quality gate.\n"
                         f"     Results should be interpreted with caution.\n"
                     )
