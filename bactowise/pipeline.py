@@ -7,6 +7,7 @@ import shutil
 from bactowise.models.config import PipelineConfig
 from bactowise.runners.base import BaseRunner
 from bactowise.runners.factory import RunnerFactory
+from bactowise.utils.console import console, stage_rule
 from bactowise.utils.db_manager import (
     download_all,
     download_pgap,
@@ -22,8 +23,8 @@ class Pipeline:
 
     Execution model:
       - Tools are grouped into stages based on their depends_on declarations.
-      - Stage 1: tools with no dependencies (QC tools, e.g. CheckM) — run first.
-      - Stage 2+: tools whose dependencies have all completed — run next.
+      - Stage 1: tools with no dependencies (QC tools, e.g. CheckM) -- run first.
+      - Stage 2+: tools whose dependencies have all completed -- run next.
       - Within each stage, tools run simultaneously via a thread pool.
       - If a dependency tool has role=qc and its results failed QC criteria,
         downstream tools are warned before running.
@@ -49,22 +50,8 @@ class Pipeline:
     Stage numbering (user-facing):
         Stage 1: checkm                    -- QC gate (skippable)
         Stage 2: prokka + bakta + pgap     -- annotation (cannot be skipped)
-
-    Example (no skips):
-        stage 1: checkm             -- runs first
-        stage 2: prokka, bakta      -- run after checkm completes
-
-    Example (skip_stages={1}):
-        stage 2: prokka, bakta      -- run immediately, QC gate skipped
-
-    Example (GFF for prokka only, no stage skip):
-        stage 1: checkm             -- runs normally
-        stage 2: prokka             -- GFF copied, no runner invoked
-                 bakta, pgap        -- run normally in parallel
     """
 
-    # Stage numbers the user is permitted to skip.
-    # Stage 2+ contains the core annotation tools and is never skippable.
     SKIPPABLE_STAGES: frozenset = frozenset({1})
 
     def __init__(
@@ -77,9 +64,6 @@ class Pipeline:
         self.config = config
         self.organism = organism.strip()
 
-        # Validate and resolve skip_stages into tool names.
-        # Only SKIPPABLE_STAGES may be skipped; attempting to skip stage 2+
-        # raises immediately with a clear error before any work is done.
         skip_stages = set(skip_stages or [])
         invalid_stages = skip_stages - self.SKIPPABLE_STAGES
         if invalid_stages:
@@ -93,16 +77,11 @@ class Pipeline:
         self.skip_stages: frozenset = frozenset(skip_stages)
         self.skip: set[str] = self._resolve_skip_stages(skip_stages)
 
-        # Validate and store GFF bypass files.
-        # Checks for conflicts with --skip and verifies files exist.
         self.gff_files: dict[str, Path] = {}
         if gff_files:
             self._validate_gff_files(gff_files)
             self.gff_files = {k: v.resolve() for k, v in gff_files.items()}
 
-        # Only create runners for tools that are not being skipped AND not being
-        # bypassed via --gff. GFF-bypassed tools never need a runner because
-        # their output is provided directly -- no Docker / conda contact needed.
         bypassed = set(self.gff_files.keys())
         self.runners: dict[str, BaseRunner] = {
             tool.name: RunnerFactory.create(tool, config.output_dir, self.organism, config.threads)
@@ -113,10 +92,7 @@ class Pipeline:
     def _resolve_skip_stages(self, skip_stages: set[int]) -> set[str]:
         """
         Convert a set of stage numbers into the set of tool names to skip.
-
         Stage 1 = all tools with no depends_on (QC tools).
-        This is deterministic from the config alone -- no need to build the
-        full dependency graph first.
         """
         if not skip_stages:
             return set()
@@ -126,14 +102,18 @@ class Pipeline:
         return skipped
 
     def preflight(self) -> None:
-        print("\n" + "="*50)
-        print("  BactoWise -- Preflight Checks")
-        print("="*50)
+        console.print()
+        console.rule("[bold white]  BactoWise — Preflight Checks  [/bold white]", style="bright_blue")
+        console.print()
 
         if self.skip:
-            print(f"\n  Skipping stage 1 (QC): {', '.join(sorted(self.skip))}")
+            console.print(f"  [skip]⊘  Skipping stage 1 (QC): {', '.join(sorted(self.skip))}[/skip]")
+
         if self.gff_files:
-            print(f"\n  GFF bypass active for:  {', '.join(sorted(self.gff_files))}")
+            console.print(f"  [bypass]↩  GFF bypass active for: {', '.join(sorted(self.gff_files))}[/bypass]")
+
+        if self.skip or self.gff_files:
+            console.print()
 
         self._ensure_databases()
 
@@ -145,12 +125,17 @@ class Pipeline:
                 errors.append(str(e))
 
         if errors:
-            print("\n✗ Preflight failed. Fix the following issues:\n")
+            console.print()
+            console.print("[error]✗ Preflight failed. Fix the following issues:[/error]")
+            console.print()
             for err in errors:
-                print(f"  {err}\n")
+                console.print(f"  [error]{err}[/error]")
+                console.print()
             raise SystemExit(1)
 
-        print("\n✓ All preflight checks passed. Starting pipeline...\n")
+        console.print()
+        console.print("[success]✓ All preflight checks passed. Starting pipeline...[/success]")
+        console.print()
 
     def run(self, fasta: Path) -> dict[str, Path]:
         fasta = fasta.resolve()
@@ -162,40 +147,37 @@ class Pipeline:
         stages = self._build_stages()
         total = sum(len(s) for s in stages)
 
-        print("="*50)
+        console.rule("[bold white]  Pipeline  [/bold white]", style="bright_blue")
+        console.print()
+
         if self.skip_stages:
             stage_labels = ", ".join(f"stage_{s}" for s in sorted(self.skip_stages))
-            print(f"  Skipping: {stage_labels} ({', '.join(sorted(self.skip))})")
+            console.print(f"  [skip]⊘  Skipping: {stage_labels} ({', '.join(sorted(self.skip))})[/skip]")
+
         if self.gff_files:
-            print(f"  GFF bypass for:   {', '.join(sorted(self.gff_files))}")
-        print(f"  Running {total} tool(s) in {len(stages)} stage(s)")
-        print(f"  Input:  {fasta}")
-        print(f"  Output: {self.config.output_dir}")
-        print("="*50 + "\n")
+            console.print(f"  [bypass]↩  GFF bypass for: {', '.join(sorted(self.gff_files))}[/bypass]")
+
+        console.print(f"  Running [bold]{total}[/bold] tool(s) in [bold]{len(stages)}[/bold] stage(s)")
+        console.print(f"  Input:  [muted]{fasta}[/muted]")
+        console.print(f"  Output: [muted]{self.config.output_dir}[/muted]")
+        console.print()
 
         results: dict[str, Path] = {}
         errors:  dict[str, str]  = {}
 
         for stage_num, stage_tools in enumerate(stages, 1):
-            print(f"\n-- Stage {stage_num}: {', '.join(stage_tools)} {'--'*20}\n")
+            stage_rule(stage_num, stage_tools)
 
-            # Split the stage into tools being bypassed via --gff and tools
-            # that need to run. Both halves execute within the same stage so
-            # dependency ordering is preserved.
             bypass_tools = [name for name in stage_tools if name in self.gff_files]
             run_tools    = [name for name in stage_tools if name not in self.gff_files]
 
-            # Apply GFF bypass immediately for any bypassed tools in this stage
             if bypass_tools:
                 self._apply_gff_bypass(bypass_tools, results)
 
             if not run_tools:
                 continue
 
-            # Warn if any skipped dependency was a QC tool
             self._warn_skipped_qc(run_tools)
-
-            # Warn if any non-skipped QC dependency failed its thresholds
             self._warn_qc(run_tools, results)
 
             runners_in_stage = [self.runners[name] for name in run_tools]
@@ -211,22 +193,27 @@ class Pipeline:
                         results[tool_name] = future.result()
                     except Exception as e:
                         errors[tool_name] = str(e)
-                        print(f"\n✗ [{tool_name}] Failed: {e}")
+                        console.print(f"\n[error]✗ [{tool_name}] Failed: {e}[/error]")
 
         # Summary
-        print("\n" + "="*50)
-        print("  Pipeline Summary")
-        print("="*50)
+        console.print()
+        console.rule("[bold white]  Pipeline Summary  [/bold white]", style="bright_blue")
+        console.print()
+
         for tool_name in sorted(self.skip):
-            print(f"  ⊘  {tool_name:15s} → skipped (stage 1)")
+            console.print(f"  [skip]⊘  {tool_name:15s} → skipped (stage 1)[/skip]")
+
         for tool_name in sorted(self.gff_files):
-            print(f"  ↩  {tool_name:15s} → GFF provided")
+            console.print(f"  [bypass]↩  {tool_name:15s} → GFF provided[/bypass]")
+
         for tool_name, output_path in results.items():
             if tool_name not in self.gff_files:
-                print(f"  ✓  {tool_name:15s} → {output_path}")
+                console.print(f"  [success]✓  {tool_name:15s}[/success] → [muted]{output_path}[/muted]")
+
         for tool_name, error in errors.items():
-            print(f"  ✗  {tool_name:15s} → FAILED: {error}")
-        print()
+            console.print(f"  [error]✗  {tool_name:15s} → FAILED: {error}[/error]")
+
+        console.print()
 
         if errors:
             raise RuntimeError(
@@ -239,10 +226,6 @@ class Pipeline:
         """
         Return the names of all annotation tools -- i.e. tools that have at
         least one dependency and are not being skipped.
-
-        Used to validate --gff tool names: a GFF file may only be provided
-        for a tool in this set. Scales automatically as tools are added to
-        the config.
         """
         return {
             t.name for t in self.config.tools
@@ -257,15 +240,10 @@ class Pipeline:
         2. Every tool name in --gff must be a valid annotation tool in the
            active config (catches typos before anything runs).
         3. Every provided GFF path must exist on disk.
-
-        Any subset of annotation tools may be bypassed -- partial bypass is
-        fully supported. Tools without a provided GFF file run normally.
-        QC tools (stage 1) cannot be bypassed via --gff.
         """
         annotation_tools = self._annotation_tools()
         provided         = set(gff_files.keys())
 
-        # Rule 1: --gff and --skip cannot name the same tool
         conflict = provided & self.skip
         if conflict:
             raise ValueError(
@@ -275,7 +253,6 @@ class Pipeline:
                 f"pre-computed annotation output -- not both."
             )
 
-        # Rule 2: every --gff tool name must be a known annotation tool
         unknown = provided - annotation_tools
         if unknown:
             raise ValueError(
@@ -285,7 +262,6 @@ class Pipeline:
                 f"{', '.join(sorted(annotation_tools))}"
             )
 
-        # Rule 3: files must exist
         for tool_name, path in gff_files.items():
             if not path.exists():
                 raise FileNotFoundError(
@@ -297,8 +273,7 @@ class Pipeline:
     ) -> None:
         """
         Copy each provided GFF file into the tool's standard output directory
-        so downstream steps (e.g. Panaroo) always find outputs in the same
-        place regardless of whether annotation was run or provided.
+        so downstream steps always find outputs in the same place.
         """
         for tool_name in stage_tools:
             src             = self.gff_files[tool_name]
@@ -309,18 +284,13 @@ class Pipeline:
             shutil.copy2(src, dst)
 
             results[tool_name] = tool_output_dir
-            print(f"  ↩  [{tool_name}] Using provided GFF: {src}")
-            print(f"              Copied to: {dst}")
+            console.print(f"  [bypass]↩  [{tool_name}] Using provided GFF: {src}[/bypass]")
+            console.print(f"              Copied to: [muted]{dst}[/muted]")
 
     def _ensure_databases(self) -> None:
         """
-        Check whether required databases are present and download any that are
-        missing. This runs automatically on every `bactowise run` so the user
-        never has to run `bactowise db download` manually on first use.
-
-        Only downloads databases that are actually needed by the active
-        (non-skipped) tools in this run. PGAP is handled separately since it
-        uses pgap.py --update rather than BactoWise's own download logic.
+        Check whether required databases are present and download any that are missing.
+        Only downloads databases needed by the active (non-skipped) tools in this run.
         """
         tool_names = {t.name for t in self.config.tools} - self.skip - set(self.gff_files)
 
@@ -335,8 +305,10 @@ class Pipeline:
         if not missing_checkm and not missing_bakta and not missing_pgap:
             return
 
-        print("\n  Some required databases are missing -- downloading now.")
-        print("  You can also run: 'bactowise db download' to manage databases manually.\n")
+        console.print()
+        console.print("  [warning]Some required databases are missing — downloading now.[/warning]")
+        console.print("  You can also run: [bold]bactowise db download[/bold] to manage databases manually.")
+        console.print()
 
         try:
             download_all(
@@ -354,27 +326,11 @@ class Pipeline:
     def _build_stages(self) -> list[list[str]]:
         """
         Topological sort of tools into execution stages, respecting skips.
-
-        Skipped tools are treated as already-completed at the start so their
-        dependents are unblocked and still run. Only non-skipped tools appear
-        in the returned stages list.
-
-        Stage 1 = non-skipped tools with no unsatisfied dependencies.
-        Stage N = non-skipped tools whose all dependencies are in stages 1..N-1
-                  or have been skipped.
-
-        Note: internal stage indices here start at 1 to match the user-facing
-        stage numbers displayed in output and accepted by --skip.
         """
         tool_configs = {t.name: t for t in self.config.tools}
 
-        # Skipped tools are pre-populated into completed so dependents are
-        # unblocked without the skipped tool appearing in any stage.
         completed: set[str] = set(self.skip)
-        remaining = [
-            name for name in tool_configs
-            if name not in self.skip
-        ]
+        remaining = [name for name in tool_configs if name not in self.skip]
         stages = []
 
         while remaining:
@@ -396,9 +352,8 @@ class Pipeline:
 
     def _warn_skipped_qc(self, stage_tools: list[str]) -> None:
         """
-        Before running a stage, warn if any of its dependencies were skipped
-        via --skip stage_1 AND those dependencies had role=qc. The user is
-        running annotation without a quality gate -- they should know.
+        Warn if any dependency of the current stage was a QC tool that was
+        skipped via --skip stage_1.
         """
         tool_configs = {t.name: t for t in self.config.tools}
 
@@ -409,17 +364,18 @@ class Pipeline:
                     continue
                 dep_config = tool_configs.get(dep_name)
                 if dep_config and dep_config.role == "qc":
-                    print(
-                        f"  ⚠  Warning: QC tool '{dep_name}' was skipped (--skip stage_1).\n"
-                        f"     '{tool_name}' is running without a genome quality gate.\n"
-                        f"     Results should be interpreted with caution.\n"
+                    console.print(
+                        f"\n  [warning]⚠  Warning:[/warning] QC tool [bold]'{dep_name}'[/bold] "
+                        f"was skipped (--skip stage_1).\n"
+                        f"     [bold]{tool_name}[/bold] is running without a genome quality gate.\n"
+                        f"     Results should be interpreted with caution."
                     )
+                    console.print()
                     warned.add(dep_name)
 
     def _warn_qc(self, stage_tools: list[str], completed_results: dict) -> None:
         """
-        Before running a stage, check if any of its dependencies were QC tools
-        whose results didn't meet criteria. Warn the user if so.
+        Warn if any QC dependency failed its thresholds.
         """
         tool_configs = {t.name: t for t in self.config.tools}
 
@@ -440,11 +396,13 @@ class Pipeline:
                             qc["contamination"] > criteria.contamination
                         )
                         if failed:
-                            print(
-                                f"  ⚠  Note: '{tool_name}' is running on a genome that "
-                                f"did not pass QC criteria set for '{dep_name}'.\n"
-                                f"     Completeness: {qc['completeness']:.1f}% "
+                            console.print(
+                                f"\n  [warning]⚠  Note:[/warning] [bold]{tool_name}[/bold] is running "
+                                f"on a genome that did not pass QC criteria for "
+                                f"[bold]{dep_name}[/bold].\n"
+                                f"     Completeness:  [bold]{qc['completeness']:.1f}%[/bold] "
                                 f"(threshold: {criteria.completeness:.1f}%)\n"
-                                f"     Contamination: {qc['contamination']:.1f}% "
-                                f"(threshold: {criteria.contamination:.1f}%)\n"
+                                f"     Contamination: [bold]{qc['contamination']:.1f}%[/bold] "
+                                f"(threshold: {criteria.contamination:.1f}%)"
                             )
+                            console.print()

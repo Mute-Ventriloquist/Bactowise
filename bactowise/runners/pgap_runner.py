@@ -7,6 +7,7 @@ from pathlib import Path
 
 from bactowise.models.config import ToolConfig
 from bactowise.runners.base import BaseRunner
+from bactowise.utils.console import console
 
 # PGAP data dir and marker are defined in db_manager to ensure a single
 # source of truth. pgap_runner imports them rather than redefining them.
@@ -49,28 +50,24 @@ class PGAPRunner(BaseRunner):
     # ── Preflight ─────────────────────────────────────────────────────────────
 
     def preflight(self) -> None:
-        print(f"\n[preflight] Checking pgap tool: {self.config.name}")
+        console.print(f"\n[info]\\[preflight][/info] Checking pgap tool: [bold]{self.config.name}[/bold]")
 
-        # 1. pgap.py must be on PATH
         pgap_bin = self._find_pgap()
-        print(f"  ✓  Found pgap.py: {pgap_bin}")
+        console.print(f"  [success]✓[/success]  Found pgap.py: [muted]{pgap_bin}[/muted]")
 
-        # 2. Supplemental data directory must exist and be populated
         data_dir = self._pgap_data_dir()
         self._check_data_dir(data_dir)
 
-        # 3. A container runtime must be available
         runtime_bin = self._find_container_runtime()
-        print(f"  ✓  Container runtime: {runtime_bin}")
+        console.print(f"  [success]✓[/success]  Container runtime: [muted]{runtime_bin}[/muted]")
 
-        # 4. organism is required — provided via -n/--organism on the command line
         if not self.organism:
             raise RuntimeError(
                 "  ✗  PGAP requires an organism name.\n"
                 "     Pass it with the -n flag:\n"
                 "       bactowise run -f genome.fasta -n \"Genus species\""
             )
-        print(f"  ✓  Organism: {self.organism}")
+        console.print(f"  [success]✓[/success]  Organism: [bold]{self.organism}[/bold]")
 
     def _find_pgap(self) -> str:
         """
@@ -117,7 +114,7 @@ class PGAPRunner(BaseRunner):
                 f"       params:\n"
                 f"         pgap_input_dir: /path/to/pgap/data"
             )
-        print(f"  ✓  PGAP data directory found: {data_dir}")
+        console.print(f"  [success]✓[/success]  PGAP data directory found: [muted]{data_dir}[/muted]")
 
     def _find_container_runtime(self) -> str:
         """
@@ -138,7 +135,7 @@ class PGAPRunner(BaseRunner):
     # ── Run ───────────────────────────────────────────────────────────────────
 
     def run(self, fasta: Path) -> Path:
-        print(f"\n[pgap] Starting NCBI PGAP annotation...")
+        self._cprint("Starting NCBI PGAP annotation...")
 
         pgap_bin      = self._find_pgap()
         runtime_bin   = self._find_container_runtime()
@@ -156,15 +153,13 @@ class PGAPRunner(BaseRunner):
             report_usage = report_usage,
         )
 
-        # Pass PGAP_INPUT_DIR so pgap.py finds the data in our managed location.
-        # Merges with the current environment so other required vars are preserved.
         run_env = {**os.environ, "PGAP_INPUT_DIR": str(self._pgap_data_dir())}
 
-        print(f"[pgap] Organism:   {organism}")
-        print(f"[pgap] Runtime:    {runtime_bin}")
-        print(f"[pgap] Data dir:   {self._pgap_data_dir()}")
-        print(f"[pgap] Command:    {' '.join(cmd)}")
-        print(f"[pgap] Logging to: {log_file}")
+        self._cprint(f"Organism:   [bold]{organism}[/bold]")
+        self._cprint(f"Runtime:    [muted]{runtime_bin}[/muted]")
+        self._cprint(f"Data dir:   [muted]{self._pgap_data_dir()}[/muted]")
+        self._cprint(f"Command:    [muted]{' '.join(cmd)}[/muted]")
+        self._cprint(f"Logging to: [muted]{log_file}[/muted]")
 
         with open(log_file, "w") as log:
             result = subprocess.run(
@@ -181,7 +176,7 @@ class PGAPRunner(BaseRunner):
                 f"Check logs at: {log_file}"
             )
 
-        print(f"[pgap] ✓ Finished. Output at: {self.output_dir}")
+        self._cprint(f"[success]✓ Finished.[/success] Output at: [muted]{self.output_dir}[/muted]")
         return self.output_dir
 
     def _build_command(

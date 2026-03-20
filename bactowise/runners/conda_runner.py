@@ -7,6 +7,7 @@ from pathlib import Path
 
 from bactowise.models.config import CondaEnvConfig, ToolConfig
 from bactowise.runners.base import BaseRunner
+from bactowise.utils.console import console
 
 
 class CondaToolRunner(BaseRunner):
@@ -28,7 +29,7 @@ class CondaToolRunner(BaseRunner):
         super().__init__(tool_config, output_dir, organism, global_threads)
 
     def preflight(self) -> None:
-        print(f"\n[preflight] Checking conda tool: {self.config.name}")
+        console.print(f"\n[info]\\[preflight][/info] Checking conda tool: [bold]{self.config.name}[/bold]")
 
         if self.config.conda_env:
             self._ensure_conda_env(self.config.conda_env)
@@ -48,7 +49,7 @@ class CondaToolRunner(BaseRunner):
             installed_version = raw.split()[-1] if raw else "unknown"
             self._check_version(installed_version)
         except Exception:
-            print(f"  ⚠  Could not determine installed version of {self.config.name}.")
+            console.print(f"  [warning]⚠[/warning]  Could not determine installed version of [bold]{self.config.name}[/bold].")
 
     def _ensure_conda_env(self, env_config: CondaEnvConfig) -> None:
         """
@@ -63,14 +64,14 @@ class CondaToolRunner(BaseRunner):
         binary_path = Path(conda_root) / "envs" / env_name / "bin" / self.config.name
 
         if binary_path.exists():
-            print(f"  ✓  Conda env '{env_name}' already exists — skipping creation.")
+            console.print(f"  [success]✓[/success]  Conda env [bold]'{env_name}'[/bold] already exists — skipping creation.")
             return
 
-        print(f"  Conda env '{env_name}' not found. Creating it now...")
+        console.print(f"\n  Conda env [bold]'{env_name}'[/bold] not found. Creating it now...")
         if env_config.dependencies:
-            print(f"    Extra dependencies: {env_config.dependencies}")
-        print(f"    Channels: {env_config.channels}")
-        print(f"    This is a one-time step and may take a few minutes.\n")
+            console.print(f"    Extra dependencies: {env_config.dependencies}")
+        console.print(f"    Channels: {env_config.channels}")
+        console.print(f"    This is a one-time step and may take a few minutes.\n")
 
         conda_bin = self._find_conda_binary()
 
@@ -82,7 +83,7 @@ class CondaToolRunner(BaseRunner):
             cmd += ["-c", channel]
         cmd += packages
 
-        print(f"  Running: {' '.join(cmd)}\n")
+        console.print(f"  Running: {' '.join(cmd)}\n")
         result = subprocess.run(cmd, text=True)
 
         if result.returncode != 0:
@@ -92,7 +93,7 @@ class CondaToolRunner(BaseRunner):
                 f"     {' '.join(cmd)}"
             )
 
-        print(f"\n  ✓  Conda env '{env_name}' created successfully.")
+        console.print(f"\n  [success]✓[/success]  Conda env [bold]'{env_name}'[/bold] created successfully.")
 
     def _conda_run_cmd(self, tool_args: list[str]) -> list[str]:
         """
@@ -175,13 +176,13 @@ class CondaToolRunner(BaseRunner):
         return os.path.expanduser("~/miniconda3")
 
     def run(self, fasta: Path) -> Path:
-        print(f"\n[{self.config.name}] Starting annotation...")
+        self._cprint("Starting annotation...")
 
         cmd = self._build_command(fasta)
         log_file = self.log_dir / f"{self.config.name}.log"
 
-        print(f"[{self.config.name}] Command: {' '.join(cmd)}")
-        print(f"[{self.config.name}] Logging to: {log_file}")
+        self._cprint(f"Command: [muted]{' '.join(cmd)}[/muted]")
+        self._cprint(f"Logging to: [muted]{log_file}[/muted]")
 
         with open(log_file, "w") as log:
             result = subprocess.run(
@@ -197,7 +198,7 @@ class CondaToolRunner(BaseRunner):
                 f"Check logs at: {log_file}"
             )
 
-        print(f"[{self.config.name}] ✓ Finished. Output at: {self.output_dir}")
+        self._cprint(f"[success]✓ Finished.[/success] Output at: [muted]{self.output_dir}[/muted]")
         return self.output_dir
 
     def _build_command(self, fasta: Path) -> list[str]:

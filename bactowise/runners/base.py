@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 from bactowise.models.config import ToolConfig
+from bactowise.utils.console import console, cprint_tool
 
 
 class BaseRunner(abc.ABC):
@@ -42,16 +43,24 @@ class BaseRunner(abc.ABC):
         """
         ...
 
+    def _cprint(self, message: str) -> None:
+        """Print a coloured [tool_name] prefixed line to the console."""
+        cprint_tool(self.config.name, message)
+
     def _check_version(self, installed_version: str) -> None:
         """Warn if installed version differs from config version. Never hard-fails."""
         if installed_version.strip() != self.config.version.strip():
-            print(
-                f"  ⚠  {self.config.name}: config version is {self.config.version} "
-                f"but installed version is {installed_version.strip()}. "
+            console.print(
+                f"  [warning]⚠[/warning]  [bold]{self.config.name}[/bold]: "
+                f"config version is [bold]{self.config.version}[/bold] "
+                f"but installed version is [bold]{installed_version.strip()}[/bold]. "
                 f"Continuing anyway."
             )
         else:
-            print(f"  ✓  {self.config.name}: version {installed_version.strip()} confirmed.")
+            console.print(
+                f"  [success]✓[/success]  [bold]{self.config.name}[/bold]: "
+                f"version [bold]{installed_version.strip()}[/bold] confirmed."
+            )
 
     def _tool_installed(self, tool_name: str) -> bool:
         return shutil.which(tool_name) is not None
@@ -59,9 +68,9 @@ class BaseRunner(abc.ABC):
     def _organism_parts(self) -> tuple[str, str]:
         """
         Split self.organism into (genus, species).
-        "Mycoplasmoides genitalium" → ("Mycoplasmoides", "genitalium")
-        "Mycoplasma"               → ("Mycoplasma", "")
-        ""                         → ("", "")
+        "Mycoplasmoides genitalium" -> ("Mycoplasmoides", "genitalium")
+        "Mycoplasma"               -> ("Mycoplasma", "")
+        ""                         -> ("", "")
         """
         if not self.organism:
             return ("", "")
