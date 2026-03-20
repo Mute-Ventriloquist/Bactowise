@@ -35,8 +35,8 @@ class SingularityToolRunner(BaseRunner):
     Supports both 'singularity' and 'apptainer' — whichever is on PATH.
     """
 
-    def __init__(self, tool_config: ToolConfig, output_dir: Path, organism: str = ""):
-        super().__init__(tool_config, output_dir, organism)
+    def __init__(self, tool_config: ToolConfig, output_dir: Path, organism: str = "", global_threads: int = 4):
+        super().__init__(tool_config, output_dir, organism, global_threads)
 
     # ── Preflight ─────────────────────────────────────────────────────────────
 
@@ -221,6 +221,10 @@ class SingularityToolRunner(BaseRunner):
         ]
         for key, val in self.config.params.items():
             cmd += [f"--{key}", str(val)]
+
+        # Fall back to global_threads if threads not explicitly set in params
+        if "--threads" not in cmd:
+            cmd += ["--threads", str(self.global_threads)]
 
         # Inject genus/species from the -n/--organism CLI arg if provided.
         # Bakta uses these for labelling output files only — they do not

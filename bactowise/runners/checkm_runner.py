@@ -226,7 +226,7 @@ class CheckMRunner(CondaToolRunner):
         ext = fasta.suffix.lstrip(".") or "fasta"
 
         # All params have sensible defaults — none are required in pipeline.yaml
-        threads = self.config.params.get("threads", 1)
+        threads = self.config.params.get("threads", self.global_threads)
 
         if mode == "taxonomy_wf":
             rank  = self.config.params.get("rank",  "domain")

@@ -24,8 +24,8 @@ class CondaToolRunner(BaseRunner):
     If conda_env is not set, the tool binary is expected on the active PATH.
     """
 
-    def __init__(self, tool_config: ToolConfig, output_dir: Path, organism: str = ""):
-        super().__init__(tool_config, output_dir, organism)
+    def __init__(self, tool_config: ToolConfig, output_dir: Path, organism: str = "", global_threads: int = 4):
+        super().__init__(tool_config, output_dir, organism, global_threads)
 
     def preflight(self) -> None:
         print(f"\n[preflight] Checking conda tool: {self.config.name}")
@@ -208,6 +208,9 @@ class CondaToolRunner(BaseRunner):
         tool_args = ["--input", str(fasta), "--outdir", str(self.output_dir)]
         for key, val in self.config.params.items():
             tool_args += [f"--{key}", str(val)]
+        # Fall back to global_threads if threads not explicitly set in params
+        if "--threads" not in tool_args:
+            tool_args += ["--threads", str(self.global_threads)]
         return self._conda_run_cmd(tool_args)
 
     def _prokka_command(self, fasta: Path) -> list[str]:
@@ -218,6 +221,11 @@ class CondaToolRunner(BaseRunner):
         ]
         for key, val in self.config.params.items():
             tool_args += [f"--{key}", str(val)]
+
+        # Fall back to global_threads if cpus not set in params.
+        # Prokka uses --cpus rather than --threads.
+        if "--cpus" not in tool_args:
+            tool_args += ["--cpus", str(self.global_threads)]
 
         # Inject genus/species from the -n/--organism CLI arg if provided.
         # These improve gene naming accuracy but do not affect the core annotation.

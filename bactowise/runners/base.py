@@ -14,9 +14,10 @@ class BaseRunner(abc.ABC):
     Swapping BaktaRunner for PGAPRunner is a config change, not a code change.
     """
 
-    def __init__(self, tool_config: ToolConfig, output_dir: Path, organism: str = ""):
+    def __init__(self, tool_config: ToolConfig, output_dir: Path, organism: str = "", global_threads: int = 4):
         self.config = tool_config
         self.organism = organism.strip()
+        self.global_threads = global_threads
         self.output_dir = output_dir / tool_config.name
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir = self.output_dir / "logs"

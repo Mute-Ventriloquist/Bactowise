@@ -77,7 +77,7 @@ class Pipeline:
         # their output is provided directly — no Docker / conda contact needed.
         bypassed = set(self.gff_files.keys())
         self.runners: dict[str, BaseRunner] = {
-            tool.name: RunnerFactory.create(tool, config.output_dir, self.organism)
+            tool.name: RunnerFactory.create(tool, config.output_dir, self.organism, config.threads)
             for tool in config.tools
             if tool.name not in self.skip and tool.name not in bypassed
         }

@@ -247,6 +247,100 @@ class TestOrganismPropagation:
         assert pipeline.organism == "Staphylococcus aureus"
         assert pipeline.runners["prokka"].organism == "Staphylococcus aureus"
 
+    def test_pipeline_passes_global_threads_to_runners(self, tmp_path):
+        from bactowise.pipeline import Pipeline
+        from bactowise.models.config import PipelineConfig
+        config = PipelineConfig(
+            tools=[{"name": "prokka", "version": "1.14.6", "runtime": "conda"}],
+            output_dir=str(tmp_path),
+            threads=8,
+        )
+        pipeline = Pipeline(config)
+        assert pipeline.runners["prokka"].global_threads == 8
+
+
+# ─── Global threads fallback tests ───────────────────────────────────────────
+
+class TestGlobalThreadsFallback:
+    """
+    Verify that global_threads flows through to command builders as a fallback
+    when threads/cpus are not set in params.
+    """
+
+    def test_prokka_uses_global_threads_when_cpus_not_in_params(self, tmp_path):
+        from bactowise.runners.conda_runner import CondaToolRunner
+        tool = ToolConfig(name="prokka", version="1.14.6", runtime="conda")
+        runner = CondaToolRunner(tool, tmp_path, global_threads=8)
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+        cmd = runner._prokka_command(fasta)
+        assert "--cpus" in cmd
+        assert cmd[cmd.index("--cpus") + 1] == "8"
+
+    def test_prokka_respects_explicit_cpus_over_global_threads(self, tmp_path):
+        from bactowise.runners.conda_runner import CondaToolRunner
+        tool = ToolConfig(
+            name="prokka", version="1.14.6", runtime="conda",
+            params={"cpus": 2}
+        )
+        runner = CondaToolRunner(tool, tmp_path, global_threads=8)
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+        cmd = runner._prokka_command(fasta)
+        # "2" (from params) should appear, global threads (8) should not
+        cpus_val = cmd[cmd.index("--cpus") + 1]
+        assert cpus_val == "2"
+
+    def test_checkm_uses_global_threads_when_threads_not_in_params(self, tmp_path):
+        from bactowise.runners.checkm_runner import CheckMRunner
+        tool = ToolConfig(
+            name="checkm", version="1.2.3", runtime="conda", role="qc",
+        )
+        runner = CheckMRunner(tool, tmp_path, global_threads=6)
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+        cmd = runner._build_checkm_command(fasta, "taxonomy_wf")
+        assert "-t" in cmd
+        assert cmd[cmd.index("-t") + 1] == "6"
+
+    def test_checkm_respects_explicit_threads_over_global(self, tmp_path):
+        from bactowise.runners.checkm_runner import CheckMRunner
+        tool = ToolConfig(
+            name="checkm", version="1.2.3", runtime="conda", role="qc",
+            params={"threads": 2}
+        )
+        runner = CheckMRunner(tool, tmp_path, global_threads=8)
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+        cmd = runner._build_checkm_command(fasta, "taxonomy_wf")
+        assert cmd[cmd.index("-t") + 1] == "2"
+
+    def test_bakta_singularity_uses_global_threads_when_not_in_params(self, tmp_path):
+        from bactowise.runners.singularity_runner import SingularityToolRunner
+        tool = ToolConfig(
+            name="bakta", version="1.12.0", runtime="singularity",
+            image="oschwengers/bakta:v1.12.0",
+        )
+        runner = SingularityToolRunner(tool, tmp_path, global_threads=10)
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+        cmd = runner._bakta_command(fasta)
+        assert "--threads" in cmd
+        assert cmd[cmd.index("--threads") + 1] == "10"
+
+    def test_bakta_singularity_respects_explicit_threads_over_global(self, tmp_path):
+        from bactowise.runners.singularity_runner import SingularityToolRunner
+        tool = ToolConfig(
+            name="bakta", version="1.12.0", runtime="singularity",
+            image="oschwengers/bakta:v1.12.0",
+            params={"threads": 3}
+        )
+        runner = SingularityToolRunner(tool, tmp_path, global_threads=10)
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+        cmd = runner._bakta_command(fasta)
+        assert cmd[cmd.index("--threads") + 1] == "3"
+
 
 # ─── Version warning test ─────────────────────────────────────────────────────
 

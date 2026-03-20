@@ -143,7 +143,7 @@ class PGAPRunner(BaseRunner):
         pgap_bin      = self._find_pgap()
         runtime_bin   = self._find_container_runtime()
         organism      = self.organism
-        threads       = self.config.params.get("threads", 1)
+        threads       = self.config.params.get("threads", self.global_threads)
         report_usage  = self.config.params.get("report_usage", False)
         log_file      = self.log_dir / "pgap.log"
 
