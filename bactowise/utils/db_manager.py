@@ -279,7 +279,7 @@ def download_eggnog(force: bool = False) -> Path:
 
         print(f"  Downloading {filename}...")
         try:
-            _download_with_progress(url, dest)
+            _download_resumable(url, dest)
         except Exception as e:
             dest.unlink(missing_ok=True)
             raise RuntimeError(
@@ -774,3 +774,92 @@ def _download_with_progress(url: str, dest: Path) -> None:
 
     urllib.request.urlretrieve(url, dest, reporthook=_reporthook)
     print()  # newline after progress bar finishes
+
+
+def _download_resumable(url: str, dest: Path, max_retries: int = 10) -> None:
+    """
+    Download a URL to dest with resume support and automatic retries.
+
+    Uses HTTP Range requests to continue from the byte offset already
+    written to disk. This means a network dropout at 90% does not restart
+    from zero — the next attempt picks up where it left off.
+
+    Retries up to max_retries times with a short backoff between attempts.
+    Falls back to a full (non-resumable) download on the first attempt if
+    the server does not support Range requests.
+    """
+    import time
+
+    attempt  = 0
+    backoff  = 5  # seconds between retries
+
+    while attempt < max_retries:
+        attempt += 1
+        existing = dest.stat().st_size if dest.exists() else 0
+
+        try:
+            req = urllib.request.Request(url)
+            if existing:
+                req.add_header("Range", f"bytes={existing}-")
+
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                total_size   = int(resp.headers.get("Content-Length", 0))
+                is_partial   = resp.status == 206  # HTTP 206 Partial Content
+                total_bytes  = (existing + total_size) if is_partial else total_size
+
+                mode = "ab" if is_partial else "wb"
+                if is_partial:
+                    print(
+                        f"\r  Resuming from {existing / 1024**2:.0f} MB "
+                        f"(attempt {attempt}/{max_retries})...",
+                        flush=True,
+                    )
+                elif attempt > 1:
+                    print(
+                        f"\r  Restarting download "
+                        f"(attempt {attempt}/{max_retries}, server does not support resume)...",
+                        flush=True,
+                    )
+
+                written = existing if is_partial else 0
+                bar_len = 30
+
+                with open(dest, mode) as f:
+                    while True:
+                        chunk = resp.read(1024 * 1024)  # 1 MB chunks
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        written += len(chunk)
+
+                        if total_bytes > 0:
+                            pct    = min(written * 100 / total_bytes, 100)
+                            filled = int(bar_len * pct / 100)
+                            bar    = "█" * filled + "░" * (bar_len - filled)
+                            print(
+                                f"\r  [{bar}] {pct:5.1f}%  "
+                                f"{written / 1024**2:.0f}/{total_bytes / 1024**2:.0f} MB",
+                                end="", flush=True,
+                            )
+                        else:
+                            print(
+                                f"\r  Downloaded {written / 1024**2:.0f} MB…",
+                                end="", flush=True,
+                            )
+
+            print()  # newline after progress bar
+            return  # success
+
+        except Exception as e:
+            print()  # newline after partial progress bar
+            if attempt < max_retries:
+                print(
+                    f"  ⚠  Download interrupted: {e}\n"
+                    f"  Retrying in {backoff}s (attempt {attempt}/{max_retries})..."
+                )
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 60)  # exponential backoff, cap at 60s
+            else:
+                raise RuntimeError(
+                    f"Download failed after {max_retries} attempts: {e}"
+                ) from e
