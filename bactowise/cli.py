@@ -17,11 +17,9 @@ from bactowise.utils.db_manager import (
     DEFAULT_DB_ROOT,
     _DEFAULT_PGAP_DATA_DIR,
     _PHIGARO_DB_DIR,
-    amrfinderplus_db_path,
     download_bakta,
     download_checkm,
     download_pgap,
-    is_amrfinderplus_db_present,
     is_bakta_present,
     is_checkm_present,
     is_pgap_present,
@@ -153,18 +151,17 @@ def db_status():
     console.print()
     console.print("  [bold white]Stage 4 — Supplementary[/bold white]")
     console.print(
-        f"    {'[success]✓[/success]' if amrfinder_ok else '[error]✗[/error]'}"
-        f"  AMRFinderPlus → "
-        + (f"[muted]{amrfinder_path}[/muted]" if amrfinder_path
-           else "[muted]not found — run bactowise (amrfinder -u runs automatically)[/muted]")
-    )
-    console.print(
         f"    {'[success]✓[/success]' if phigaro_ok else '[error]✗[/error]'}"
         f"  Phigaro       → [muted]{_PHIGARO_DB_DIR}[/muted]"
     )
+    console.print(
+        f"    [muted]~  AMRFinderPlus → database is downloaded automatically by "
+        f"amrfinder -u into the amrfinderplus_env conda environment "
+        f"and is not tracked here[/muted]"
+    )
 
     all_core_ok   = checkm_ok and bakta_ok and pgap_ok
-    all_stage4_ok = amrfinder_ok and phigaro_ok
+    all_stage4_ok = phigaro_ok
 
     console.print()
     if not all_core_ok:
