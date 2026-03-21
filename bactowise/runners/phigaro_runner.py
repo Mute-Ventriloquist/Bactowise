@@ -158,6 +158,7 @@ class PhigaroRunner(CondaToolRunner):
                     "--no-updatedb",
                 ],
             ),
+            input="\n",   # auto-select default prodigal path when prompted
             text=True,
         )
 
