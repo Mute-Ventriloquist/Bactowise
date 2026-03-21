@@ -204,20 +204,29 @@ class Pipeline:
         # Summary
         console.print()
         console.rule("[bold white]  Pipeline Summary  [/bold white]", style="bright_blue")
-        console.print()
 
-        for tool_name in sorted(self.skip):
-            console.print(f"  [skip]⊘  {tool_name:15s} → skipped (stage 1)[/skip]")
+        full_stage_map = self._build_full_stage_map()
+        stage_labels = {1: "QC", 2: "Annotation", 3: "Consensus"}
 
-        for tool_name in sorted(self.gff_files):
-            console.print(f"  [bypass]↩  {tool_name:15s} → GFF provided[/bypass]")
+        for stage_num, stage_tools in sorted(full_stage_map.items()):
+            label = stage_labels.get(stage_num, f"Stage {stage_num}")
+            skipped = stage_num in self.skip_stages
 
-        for tool_name, output_path in results.items():
-            if tool_name not in self.gff_files:
-                console.print(f"  [success]✓  {tool_name:15s}[/success] → [muted]{output_path}[/muted]")
+            console.print()
+            if skipped:
+                console.print(f"  [skip]Stage {stage_num} — {label}[/skip]")
+            else:
+                console.print(f"  [bold white]Stage {stage_num} — {label}[/bold white]")
 
-        for tool_name, error in errors.items():
-            console.print(f"  [error]✗  {tool_name:15s} → FAILED: {error}[/error]")
+            for tool_name in stage_tools:
+                if tool_name in self.skip:
+                    console.print(f"    [skip]⊘  {tool_name:15s} → skipped[/skip]")
+                elif tool_name in self.gff_files:
+                    console.print(f"    [bypass]↩  {tool_name:15s} → GFF provided[/bypass]")
+                elif tool_name in errors:
+                    console.print(f"    [error]✗  {tool_name:15s} → FAILED: {errors[tool_name]}[/error]")
+                elif tool_name in results:
+                    console.print(f"    [success]✓  {tool_name:15s}[/success] → [muted]{results[tool_name]}[/muted]")
 
         console.print()
 
@@ -227,6 +236,36 @@ class Pipeline:
             )
 
         return results
+
+    def _build_full_stage_map(self) -> dict[int, list[str]]:
+        """
+        Build a complete stage_num → [tool_names] map covering ALL tools,
+        including those in skipped stages. Used by the summary to group tools
+        visually by stage regardless of whether they ran or were skipped.
+        """
+        tool_configs = {t.name: t for t in self.config.tools}
+
+        # Start with skipped tools pre-completed so dependency resolution works
+        # the same way as _build_stages(), but we want to capture skipped tools
+        # in their own stage rather than ignoring them.
+        completed: set[str] = set()
+        remaining = list(tool_configs.keys())
+        stage_map: dict[int, list[str]] = {}
+        stage_num = 1
+
+        while remaining:
+            ready = [
+                name for name in remaining
+                if all(dep in completed for dep in tool_configs[name].depends_on)
+            ]
+            if not ready:
+                break
+            stage_map[stage_num] = ready
+            completed.update(ready)
+            remaining = [n for n in remaining if n not in ready]
+            stage_num += 1
+
+        return stage_map
 
     def _annotation_tools(self) -> set[str]:
         """
