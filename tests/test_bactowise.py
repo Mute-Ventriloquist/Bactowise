@@ -1053,3 +1053,153 @@ class TestAMRFinderPlusRunner:
         })
         with pytest.raises(ValueError, match="cannot be skipped"):
             Pipeline(config, skip_stages={2})
+
+
+# ─── PhigaroRunner tests ──────────────────────────────────────────────────────
+
+class TestPhigaroRunner:
+    """
+    Tests for PhigaroRunner — factory dispatch, command building,
+    setup detection, and stage 4 placement.
+    """
+
+    def _make_tool_config(self) -> ToolConfig:
+        return ToolConfig(
+            name="phigaro",
+            version="latest",
+            runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "phigaro_env", "dependencies": []},
+        )
+
+    def test_factory_returns_phigaro_runner(self, tmp_path):
+        from bactowise.runners.phigaro_runner import PhigaroRunner
+        tool   = self._make_tool_config()
+        runner = RunnerFactory.create(tool, tmp_path)
+        assert isinstance(runner, PhigaroRunner)
+
+    def test_build_command_basic(self, tmp_path):
+        from bactowise.runners.phigaro_runner import PhigaroRunner
+        tool   = self._make_tool_config()
+        runner = PhigaroRunner(tool, tmp_path, global_threads=4)
+
+        fasta         = tmp_path / "genome.fasta"
+        output_prefix = tmp_path / "phigaro_output"
+        fasta.touch()
+
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta, output_prefix)
+
+        assert "-f" in cmd
+        assert str(fasta.resolve()) in cmd
+        assert "-o" in cmd
+        assert str(output_prefix) in cmd
+        assert "-e" in cmd
+        assert "tsv" in cmd
+        assert "gff" in cmd
+        assert "--not-open" in cmd
+        assert "-t" in cmd
+
+    def test_build_command_threads_fallback(self, tmp_path):
+        from bactowise.runners.phigaro_runner import PhigaroRunner
+        tool   = self._make_tool_config()
+        runner = PhigaroRunner(tool, tmp_path, global_threads=6)
+
+        fasta         = tmp_path / "genome.fasta"
+        output_prefix = tmp_path / "phigaro_output"
+
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta, output_prefix)
+
+        assert "-t" in cmd
+        assert cmd[cmd.index("-t") + 1] == "6"
+
+    def test_build_command_explicit_threads(self, tmp_path):
+        from bactowise.runners.phigaro_runner import PhigaroRunner
+        tool = ToolConfig(
+            name="phigaro", version="latest", runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "phigaro_env", "dependencies": []},
+            params={"threads": 2},
+        )
+        runner = PhigaroRunner(tool, tmp_path, global_threads=8)
+
+        fasta         = tmp_path / "genome.fasta"
+        output_prefix = tmp_path / "phigaro_output"
+
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta, output_prefix)
+
+        assert cmd[cmd.index("-t") + 1] == "2"
+
+    def test_conda_run_cmd_for_setup_uses_phigaro_setup_binary(self, tmp_path):
+        from bactowise.runners.phigaro_runner import PhigaroRunner
+        tool   = self._make_tool_config()
+        runner = PhigaroRunner(tool, tmp_path)
+
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._conda_run_cmd_for("phigaro-setup", ["--auto"])
+
+        assert "phigaro-setup" in cmd
+        assert "--auto" in cmd
+        assert "phigaro_env" in cmd
+
+    def test_phigaro_in_stage_4_of_full_pipeline(self, tmp_path):
+        """phigaro must land in stage 4 alongside amrfinderplus."""
+        config = PipelineConfig(**{
+            "tools": [
+                {"name": "checkm",        "version": "1.2.3",               "runtime": "conda", "role": "qc"},
+                {"name": "prokka",        "version": "1.14.6",              "runtime": "conda", "depends_on": ["checkm"]},
+                {"name": "bakta",         "version": "1.9.3",               "runtime": "docker",
+                 "image": "oschwengers/bakta:1.9.3",                         "depends_on": ["checkm"]},
+                {"name": "pgap",          "version": "2024-07-18.build7555", "runtime": "pgap",  "depends_on": ["checkm"]},
+                {"name": "consensus",     "version": "1.0.0",               "runtime": "conda",
+                 "depends_on": ["bakta", "prokka", "pgap"],
+                 "conda_env": {"name": "consensus_env", "dependencies": ["pandas"]}},
+                {"name": "amrfinderplus", "version": "latest",              "runtime": "conda",
+                 "depends_on": ["consensus"],
+                 "conda_env": {"name": "amrfinderplus_env", "dependencies": []}},
+                {"name": "phigaro",       "version": "latest",              "runtime": "conda",
+                 "depends_on": ["consensus"],
+                 "conda_env": {"name": "phigaro_env", "dependencies": []}},
+            ],
+            "output_dir": str(tmp_path),
+        })
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config)
+
+        stages = pipeline._build_stages()
+        assert stages[0] == ["checkm"]
+        assert set(stages[1]) == {"prokka", "bakta", "pgap"}
+        assert stages[2] == ["consensus"]
+        assert set(stages[3]) == {"amrfinderplus", "phigaro"}
+
+    def test_phigaro_skipped_with_stage_4(self, tmp_path):
+        """--skip stage_4 must also skip phigaro."""
+        config = PipelineConfig(**{
+            "tools": [
+                {"name": "checkm",        "version": "1.2.3",               "runtime": "conda", "role": "qc"},
+                {"name": "prokka",        "version": "1.14.6",              "runtime": "conda", "depends_on": ["checkm"]},
+                {"name": "bakta",         "version": "1.9.3",               "runtime": "docker",
+                 "image": "oschwengers/bakta:1.9.3",                         "depends_on": ["checkm"]},
+                {"name": "pgap",          "version": "2024-07-18.build7555", "runtime": "pgap",  "depends_on": ["checkm"]},
+                {"name": "consensus",     "version": "1.0.0",               "runtime": "conda",
+                 "depends_on": ["bakta", "prokka", "pgap"],
+                 "conda_env": {"name": "consensus_env", "dependencies": ["pandas"]}},
+                {"name": "amrfinderplus", "version": "latest",              "runtime": "conda",
+                 "depends_on": ["consensus"],
+                 "conda_env": {"name": "amrfinderplus_env", "dependencies": []}},
+                {"name": "phigaro",       "version": "latest",              "runtime": "conda",
+                 "depends_on": ["consensus"],
+                 "conda_env": {"name": "phigaro_env", "dependencies": []}},
+            ],
+            "output_dir": str(tmp_path),
+        })
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, skip_stages={4})
+
+        assert "phigaro"       in pipeline.skip
+        assert "amrfinderplus" in pipeline.skip
+        assert "consensus"     not in pipeline.skip

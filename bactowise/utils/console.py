@@ -32,6 +32,7 @@ _TOOL_COLOURS: dict[str, str] = {
     "pgap":          "hot_pink",
     "consensus":     "deep_sky_blue1",
     "amrfinderplus": "orange3",
+    "phigaro":       "medium_spring_green",
 }
 _DEFAULT_TOOL_COLOUR = "bright_blue"
 

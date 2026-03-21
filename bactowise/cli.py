@@ -16,12 +16,16 @@ from bactowise.utils.console import console
 from bactowise.utils.db_manager import (
     DEFAULT_DB_ROOT,
     _DEFAULT_PGAP_DATA_DIR,
+    _PHIGARO_DB_DIR,
+    amrfinderplus_db_path,
     download_bakta,
     download_checkm,
     download_pgap,
+    is_amrfinderplus_db_present,
     is_bakta_present,
     is_checkm_present,
     is_pgap_present,
+    is_phigaro_present,
 )
 
 app = typer.Typer(
@@ -114,27 +118,68 @@ def db_status():
     """Show database status at the default install location only.
 
     \b
-    This command only checks ~/.bactowise/databases/. It does not read
-    the pipeline config. If you have set custom database paths in the
-    installed config, check those paths manually — the pipeline will
-    report a missing database at runtime if a configured path is missing.
+    This command only checks ~/.bactowise/databases/ and known conda env
+    locations. It does not read the pipeline config. If you have set custom
+    database paths in the installed config, check those paths manually.
     """
-    typer.echo(f"\nBactoWise — Database Status")
-    typer.echo(f"  Note: showing status for default location only ({DEFAULT_DB_ROOT}).")
-    typer.echo()
+    console.print(f"\n[bold]BactoWise — Database Status[/bold]")
+    console.print(f"  [muted]Default location: {DEFAULT_DB_ROOT}[/muted]")
 
     checkm_ok = is_checkm_present()
     bakta_ok  = is_bakta_present()
     pgap_ok   = is_pgap_present()
+    phigaro_ok    = is_phigaro_present()
+    amrfinder_ok  = is_amrfinderplus_db_present()
+    amrfinder_path = amrfinderplus_db_path()
 
-    typer.echo(f"  {'✓' if checkm_ok else '✗'}  CheckM  → {DEFAULT_DB_ROOT / 'checkm'}")
-    typer.echo(f"  {'✓' if bakta_ok  else '✗'}  Bakta   → {DEFAULT_DB_ROOT / 'bakta' / 'db-light'}")
-    typer.echo(f"  {'✓' if pgap_ok   else '✗'}  PGAP    → {_DEFAULT_PGAP_DATA_DIR}")
+    console.print()
+    console.print("  [bold white]Stage 1 — QC[/bold white]")
+    console.print(
+        f"    {'[success]✓[/success]' if checkm_ok else '[error]✗[/error]'}"
+        f"  CheckM   → [muted]{DEFAULT_DB_ROOT / 'checkm'}[/muted]"
+    )
 
-    if not checkm_ok or not bakta_ok or not pgap_ok:
-        typer.echo(f"\n  Run 'bactowise db download' to fetch missing databases.\n")
-    else:
-        typer.echo(f"\n  All databases present.\n")
+    console.print()
+    console.print("  [bold white]Stage 2 — Annotation[/bold white]")
+    console.print(
+        f"    {'[success]✓[/success]' if bakta_ok else '[error]✗[/error]'}"
+        f"  Bakta    → [muted]{DEFAULT_DB_ROOT / 'bakta' / 'db-light'}[/muted]"
+    )
+    console.print(
+        f"    {'[success]✓[/success]' if pgap_ok else '[error]✗[/error]'}"
+        f"  PGAP     → [muted]{_DEFAULT_PGAP_DATA_DIR}[/muted]"
+    )
+
+    console.print()
+    console.print("  [bold white]Stage 4 — Supplementary[/bold white]")
+    console.print(
+        f"    {'[success]✓[/success]' if amrfinder_ok else '[error]✗[/error]'}"
+        f"  AMRFinderPlus → [muted]"
+        + (str(amrfinder_path) if amrfinder_path else "not found (run bactowise to install)")
+        + "[/muted]"
+    )
+    console.print(
+        f"    {'[success]✓[/success]' if phigaro_ok else '[error]✗[/error]'}"
+        f"  Phigaro       → [muted]{_PHIGARO_DB_DIR}[/muted]"
+    )
+
+    all_core_ok = checkm_ok and bakta_ok and pgap_ok
+    all_stage4_ok = amrfinder_ok and phigaro_ok
+
+    console.print()
+    if not all_core_ok:
+        console.print(
+            "  [warning]⚠[/warning]  Core databases missing. "
+            "Run [bold]bactowise db download[/bold] to fetch them."
+        )
+    if not all_stage4_ok:
+        console.print(
+            "  [muted]Stage 4 databases are installed automatically on first run "
+            "or when --skip stage_4 is not used.[/muted]"
+        )
+    if all_core_ok and all_stage4_ok:
+        console.print("  [success]✓  All databases present.[/success]")
+    console.print()
 
 
 # ── init command ──────────────────────────────────────────────────────────────

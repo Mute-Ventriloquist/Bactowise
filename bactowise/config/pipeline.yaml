@@ -102,6 +102,26 @@ tools:
 
   # ── Stage 4: Supplementary Annotations (skippable with --skip stage_4) ───
 
+  # Phigaro — prophage region detection.
+  # Detects prophage regions directly from the genome FASTA using Prodigal
+  # for ORF calling and pVOG HMM profiles for phage gene annotation.
+  # No stage 2/3 outputs required — all gene calling is done internally.
+  # phigaro-setup runs automatically on first use to download pVOG HMMs.
+
+  - name: phigaro
+    version: "latest"
+    runtime: conda
+    depends_on: [consensus]
+    conda_env:
+      name: "phigaro_env"
+      channels:
+        - conda-forge
+        - bioconda
+        - defaults
+      dependencies: []
+    params:
+      # threads: 4   # defaults to global threads
+
   # AMRFinderPlus — antimicrobial resistance genes and point mutations.
   # Runs in nucleotide-only mode: amrfinder -n <genome.fasta> --plus
   #

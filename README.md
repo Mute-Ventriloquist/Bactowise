@@ -3,10 +3,10 @@
 Assess bacterial genome quality and annotate genes — one command, one config file.
 
 ```
-Stage 1:  CheckM                 → completeness & contamination check (skippable)
-Stage 2:  Prokka + Bakta + PGAP  → gene annotation (run in parallel)
-Stage 3:  Consensus Engine       → merge annotations into a single source of truth
-Stage 4:  AMRFinderPlus + ...    → supplementary annotations (skippable)
+Stage 1:  CheckM                        → completeness & contamination check (skippable)
+Stage 2:  Prokka + Bakta + PGAP         → gene annotation (run in parallel)
+Stage 3:  Consensus Engine              → merge annotations into a single source of truth
+Stage 4:  AMRFinderPlus + Phigaro + ... → supplementary annotations (skippable)
 ```
 
 If the genome fails QC thresholds, BactoWise warns you and continues — the scientist makes the final call.

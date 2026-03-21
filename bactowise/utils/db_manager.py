@@ -55,6 +55,28 @@ _PGAP_BIN_DIR          = Path("~/.bactowise/bin").expanduser()
 _PGAP_WRAPPER_URL      = "https://github.com/ncbi/pgap/raw/prod/scripts/pgap.py"
 _PGAP_DATA_MARKER      = "build_number"
 
+# Phigaro: phigaro-setup writes a config.yml and the pVOG HMM profiles to
+# ~/.bactowise/databases/phigaro/. BactoWise passes --config-path to
+# phigaro-setup to redirect the default ~/.phigaro/ location here.
+_PHIGARO_DB_DIR    = Path("~/.bactowise/databases/phigaro").expanduser()
+_PHIGARO_DB_MARKER = "config.yml"
+
+# AMRFinderPlus: amrfinder -u stores the database inside the conda environment
+# at envs/amrfinderplus_env/share/amrfinderplus/data/. BactoWise cannot
+# redirect this path (amrfinder -u has no --output flag), so it is detected
+# by searching common conda root locations for the known marker file AMRProt.fa.
+_AMRFINDERPLUS_ENV_NAME   = "amrfinderplus_env"
+_AMRFINDERPLUS_DB_SUBPATH = Path("envs") / _AMRFINDERPLUS_ENV_NAME / "share" / "amrfinderplus" / "data"
+_AMRFINDERPLUS_DB_MARKER  = "AMRProt.fa"
+
+# Common conda root locations to search when locating the amrfinderplus database
+_CONDA_ROOT_CANDIDATES = [
+    Path(p).expanduser() for p in [
+        "~/miniconda3", "~/anaconda3", "~/mambaforge",
+        "~/miniforge3", "/opt/conda", "/opt/miniconda3", "/opt/anaconda3",
+    ]
+]
+
 
 # ── Public helpers ─────────────────────────────────────────────────────────────
 
@@ -94,6 +116,52 @@ def is_pgap_present(data_dir: Path = _DEFAULT_PGAP_DATA_DIR) -> bool:
         return False
     import glob
     return bool(glob.glob(str(data_dir / "input-*.build*")))
+
+
+def phigaro_db_path() -> Path:
+    """Return the BactoWise-managed Phigaro database directory."""
+    return _PHIGARO_DB_DIR
+
+
+def is_phigaro_present() -> bool:
+    """Return True if the Phigaro config/database is present at the managed location.
+    Checks for config.yml written by phigaro-setup --config-path."""
+    return (_PHIGARO_DB_DIR / _PHIGARO_DB_MARKER).exists()
+
+
+def amrfinderplus_db_path() -> Path | None:
+    """
+    Return the path to the AMRFinderPlus database directory if found,
+    or None if the conda env or database is not yet present.
+
+    Searches common conda root locations for the amrfinderplus_env data
+    directory. The database is self-managed by `amrfinder -u` and cannot
+    be redirected to ~/.bactowise/databases/.
+    """
+    import os
+    candidates = list(_CONDA_ROOT_CANDIDATES)
+
+    # Also check CONDA_PREFIX_1 and CONDA_PREFIX from the environment
+    for env_var in ("CONDA_PREFIX_1", "CONDA_PREFIX"):
+        val = os.environ.get(env_var)
+        if val:
+            p = Path(val)
+            # CONDA_PREFIX points to the active env; walk up to find root
+            for candidate in (p, p.parent.parent):
+                if (candidate / "envs").exists():
+                    candidates.insert(0, candidate)
+
+    for root in candidates:
+        db_dir = root / _AMRFINDERPLUS_DB_SUBPATH
+        if (db_dir / _AMRFINDERPLUS_DB_MARKER).exists():
+            return db_dir
+
+    return None
+
+
+def is_amrfinderplus_db_present() -> bool:
+    """Return True if the AMRFinderPlus database is present inside the conda env."""
+    return amrfinderplus_db_path() is not None
 
 
 # ── Download orchestration ─────────────────────────────────────────────────────

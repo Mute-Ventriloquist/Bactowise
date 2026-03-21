@@ -271,6 +271,11 @@ amrfinderplus/               ← Stage 4: supplementary (present unless --skip s
     ├── amrfinderplus_results.tsv
     └── logs/
         └── amrfinderplus.log
+phigaro/                     ← Stage 4: supplementary (present unless --skip stage_4)
+    ├── phigaro_output.phg.tsv
+    ├── phigaro_output.phg.gff
+    └── logs/
+        └── phigaro.log
 ```
 
 ---
@@ -560,6 +565,33 @@ Supported organism values include: `Acinetobacter_baumannii`, `Campylobacter`,
 
 **Database:** downloaded automatically via `amrfinder -u` during preflight.
 No manual setup required.
+
+**Skipping stage 4:**
+```bash
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_4
+```
+
+### Phigaro — prophage region detection
+
+Phigaro detects prophage regions embedded in bacterial genome assemblies using
+a two-step approach: Prodigal calls ORFs from the raw assembly, then pVOG HMM
+profiles annotate phage-associated genes, and a smoothing window algorithm
+identifies regions with high phage gene density.
+
+**Input used:** The original genome FASTA (`-f`) — no stage 2 or stage 3
+outputs are required. Phigaro performs its own gene calling internally.
+
+**Setup:** `phigaro-setup` downloads the pVOG HMM database (~20 MB) to
+`~/.phigaro/` on first run. BactoWise runs this automatically during preflight
+if the config file is not yet present.
+
+**Output:**
+```
+<output_dir>/phigaro/
+    phigaro_output.phg.tsv   prophage coordinates (contig, start, end)
+    phigaro_output.phg.gff   prophage regions in GFF3 format
+    logs/phigaro.log
+```
 
 **Skipping stage 4:**
 ```bash
