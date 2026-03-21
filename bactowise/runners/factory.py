@@ -9,6 +9,7 @@ from bactowise.runners.checkm_runner import CheckMRunner
 from bactowise.runners.conda_runner import CondaToolRunner
 from bactowise.runners.consensus_runner import ConsensusRunner
 from bactowise.runners.docker_runner import DockerToolRunner
+from bactowise.runners.eggnogmapper_runner import EggNOGMapperRunner
 from bactowise.runners.mefinder_runner import MobileElementFinderRunner
 from bactowise.runners.pgap_runner import PGAPRunner
 from bactowise.runners.phigaro_runner import PhigaroRunner
@@ -39,6 +40,8 @@ class RunnerFactory:
             return PlatonRunner(tool_config, output_dir, organism, global_threads)
         if tool_config.name == "mefinder":
             return MobileElementFinderRunner(tool_config, output_dir, organism, global_threads)
+        if tool_config.name == "eggnogmapper":
+            return EggNOGMapperRunner(tool_config, output_dir, organism, global_threads)
 
         if tool_config.runtime == "conda":
             return CondaToolRunner(tool_config, output_dir, organism, global_threads)

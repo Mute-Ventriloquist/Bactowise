@@ -70,6 +70,13 @@ _PLATON_DB_DIR     = Path("~/.bactowise/databases/platon/db").expanduser()
 _PLATON_DB_URL     = "https://zenodo.org/record/4066768/files/db.tar.gz"
 _PLATON_DB_TARBALL = "db.tar.gz"
 
+# EggNOG-mapper: downloaded via download_eggnog_data.py to a managed location.
+# ~20 GB total: eggnog.db (~15 GB SQLite), eggnog_proteins.dmnd (~4 GB diamond DB),
+# eggnog.taxa.db (taxonomy). BactoWise passes --data_dir to both the download
+# script and emapper.py to keep everything under ~/.bactowise/databases/.
+_EGGNOG_DB_DIR    = Path("~/.bactowise/databases/eggnog").expanduser()
+_EGGNOG_DB_MARKER = "eggnog_proteins.dmnd"   # largest file, written last
+
 # AMRFinderPlus: amrfinder -u stores the database inside the conda environment
 # at envs/amrfinderplus_env/share/amrfinderplus/data/. BactoWise cannot
 # redirect this path (amrfinder -u has no --output flag), so it is detected
@@ -213,7 +220,108 @@ def download_platon(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Pat
     return dest
 
 
-def amrfinderplus_db_path() -> Path | None:
+def eggnog_db_path() -> Path:
+    """Return the BactoWise-managed EggNOG database directory."""
+    return _EGGNOG_DB_DIR
+
+
+def is_eggnog_present() -> bool:
+    """Return True if the EggNOG database appears complete.
+    Checks for eggnog_proteins.dmnd — the DIAMOND search database, which is
+    the largest file and is downloaded after eggnog.db."""
+    return (_EGGNOG_DB_DIR / _EGGNOG_DB_MARKER).exists()
+
+
+def download_eggnog(force: bool = False) -> Path:
+    """
+    Download the EggNOG-mapper databases using download_eggnog_data.py.
+
+    Requires the eggnogmapper conda env to be present since
+    download_eggnog_data.py is installed with the eggnog-mapper package.
+    Downloads ~20 GB total:
+        eggnog.db            — main annotation database (~15 GB)
+        eggnog_proteins.dmnd — DIAMOND search database (~4 GB)
+        eggnog.taxa.db       — taxonomy database
+
+    Parameters
+    ----------
+    force : re-download even if already present
+    """
+    if is_eggnog_present() and not force:
+        print(f"  ✓  EggNOG database already present at: {_EGGNOG_DB_DIR}")
+        print(f"     (use --force-db-download to re-download)")
+        return _EGGNOG_DB_DIR
+
+    if force and _EGGNOG_DB_DIR.exists():
+        import shutil as _shutil
+        print(f"  Removing existing EggNOG database at: {_EGGNOG_DB_DIR}")
+        _shutil.rmtree(_EGGNOG_DB_DIR)
+
+    _EGGNOG_DB_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Locate the download script inside eggnogmapper_env
+    script = _find_eggnog_download_script()
+    if not script:
+        raise RuntimeError(
+            f"  ✗  download_eggnog_data.py not found.\n"
+            f"     Ensure the eggnogmapper conda env has been created:\n"
+            f"       bactowise run ... (runs preflight which creates it)\n"
+            f"     Or install manually: conda install -c bioconda eggnog-mapper"
+        )
+
+    print(f"\n  Downloading EggNOG databases (~20 GB) → {_EGGNOG_DB_DIR}")
+    print(f"  This is a one-time step and will take a while.\n")
+
+    result = subprocess.run(
+        [script, "-y", "--data_dir", str(_EGGNOG_DB_DIR)],
+        text=True,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"download_eggnog_data.py failed (exit {result.returncode}).\n"
+            f"Check the output above for details."
+        )
+
+    if not is_eggnog_present():
+        raise RuntimeError(
+            f"EggNOG download appeared to succeed but {_EGGNOG_DB_MARKER} "
+            f"was not found at {_EGGNOG_DB_DIR}."
+        )
+
+    print(f"  ✓  EggNOG database ready at: {_EGGNOG_DB_DIR}\n")
+    return _EGGNOG_DB_DIR
+
+
+def _find_eggnog_download_script() -> str | None:
+    """
+    Locate download_eggnog_data.py. Checks PATH first, then common conda
+    env locations for eggnogmapper_env.
+    """
+    import os
+    import glob as _glob
+
+    # Check PATH first
+    found = shutil.which("download_eggnog_data.py")
+    if found:
+        return found
+
+    # Search inside eggnogmapper_env across common conda roots
+    candidates = list(_CONDA_ROOT_CANDIDATES)
+    for env_var in ("CONDA_PREFIX_1", "CONDA_PREFIX"):
+        val = os.environ.get(env_var)
+        if val:
+            p = Path(val)
+            for candidate in (p, p.parent.parent):
+                if (candidate / "envs").exists():
+                    candidates.insert(0, candidate)
+
+    for root in candidates:
+        script = root / "envs" / "eggnogmapper_env" / "bin" / "download_eggnog_data.py"
+        if script.exists():
+            return str(script)
+
+    return None
     """
     Return the path to the AMRFinderPlus database directory if found, or None.
 

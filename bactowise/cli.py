@@ -16,14 +16,17 @@ from bactowise.utils.console import console
 from bactowise.utils.db_manager import (
     DEFAULT_DB_ROOT,
     _DEFAULT_PGAP_DATA_DIR,
+    _EGGNOG_DB_DIR,
     _PHIGARO_DB_DIR,
     _PLATON_DB_DIR,
     download_bakta,
     download_checkm,
+    download_eggnog,
     download_pgap,
     download_platon,
     is_bakta_present,
     is_checkm_present,
+    is_eggnog_present,
     is_pgap_present,
     is_phigaro_present,
     is_platon_present,
@@ -51,12 +54,13 @@ def db_download(
     bakta:  bool = typer.Option(False, "--bakta",  help="Bakta only."),
     pgap:   bool = typer.Option(False, "--pgap",   help="PGAP only (~30 GB)."),
     platon: bool = typer.Option(False, "--platon",  help="Platon only (~1.6 GB)."),
+    eggnog: bool = typer.Option(False, "--eggnog",  help="EggNOG only (~20 GB)."),
     force:  bool = typer.Option(
         False, "--force-db-download",
         help="Re-download even if already present.",
     ),
 ):
-    """Download all required databases, one-time (~36 GB total).
+    """Download all required databases, one-time (~56 GB total).
 
     \b
     Stores all databases under ~/.bactowise/databases/:
@@ -64,6 +68,7 @@ def db_download(
       bakta/       — Bakta annotation database, light build (~2 GB)
       pgap/        — PGAP supplemental data (~30 GB)
       platon/      — Platon plasmid database (~2.8 GB)
+      eggnog/      — EggNOG-mapper database (~20 GB)
 
     \b
     Use individual flags to download only specific databases:
@@ -71,18 +76,20 @@ def db_download(
       bactowise db download --bakta
       bactowise db download --pgap
       bactowise db download --platon
+      bactowise db download --eggnog
 
     \b
     Examples:
       bactowise db download
-      bactowise db download --pgap --force-db-download
+      bactowise db download --eggnog --force-db-download
       bactowise db download --platon --force-db-download
     """
-    any_specified = checkm or bakta or pgap or platon
+    any_specified = checkm or bakta or pgap or platon or eggnog
     download_checkm_flag = checkm or not any_specified
     download_bakta_flag  = bakta  or not any_specified
     download_pgap_flag   = pgap   or not any_specified
     download_platon_flag = platon or not any_specified
+    download_eggnog_flag = eggnog or not any_specified
 
     typer.echo(f"\nBactoWise — Database Download")
     typer.echo(f"  Storage : {DEFAULT_DB_ROOT}")
@@ -118,6 +125,13 @@ def db_download(
             typer.echo(f"\n✗ Platon: {e}", err=True)
             errors.append("platon")
 
+    if download_eggnog_flag:
+        try:
+            download_eggnog(force=force)
+        except RuntimeError as e:
+            typer.echo(f"\n✗ EggNOG: {e}", err=True)
+            errors.append("eggnog")
+
     if errors:
         typer.echo(f"\n✗ Failed: {', '.join(errors)}\n", err=True)
         raise typer.Exit(code=1)
@@ -142,6 +156,7 @@ def db_status():
     pgap_ok    = is_pgap_present()
     phigaro_ok = is_phigaro_present()
     platon_ok  = is_platon_present()
+    eggnog_ok  = is_eggnog_present()
 
     console.print()
     console.print("  [bold white]Stage 1 — QC[/bold white]")
@@ -172,6 +187,10 @@ def db_status():
         f"  Platon        → [muted]{_PLATON_DB_DIR}[/muted]"
     )
     console.print(
+        f"    {'[success]✓[/success]' if eggnog_ok else '[error]✗[/error]'}"
+        f"  EggNOG        → [muted]{_EGGNOG_DB_DIR}[/muted]"
+    )
+    console.print(
         f"    [muted]~  AMRFinderPlus → database managed inside amrfinderplus_env "
         f"(downloaded automatically by amrfinder -u, not tracked here)[/muted]"
     )
@@ -181,7 +200,7 @@ def db_status():
     )
 
     all_core_ok   = checkm_ok and bakta_ok and pgap_ok
-    all_stage4_ok = phigaro_ok and platon_ok
+    all_stage4_ok = phigaro_ok and platon_ok and eggnog_ok
 
     console.print()
     if not all_core_ok:

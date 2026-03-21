@@ -164,6 +164,31 @@ tools:
     params:
       # threads: 4   # defaults to global threads
 
+  # EggNOG-mapper — GO terms, KEGG pathways, and COG functional annotation.
+  # Input: consensus/GENE.faa (stage 3 protein FASTA — intentional, to annotate
+  # every consensus gene identified across Bakta, Prokka, and PGAP).
+  # Database (~20 GB) downloaded automatically to ~/.bactowise/databases/eggnog/
+  # Optional params:
+  #   tax_scope   : Bacteria (default) | Archaea | Eukaryota | Viruses
+  #   go_evidence : all (default) | experimental | non-experimental
+  #   threads     : override global thread count
+
+  - name: eggnogmapper
+    version: "latest"
+    runtime: conda
+    depends_on: [consensus]
+    conda_env:
+      name: "eggnogmapper_env"
+      channels:
+        - conda-forge
+        - bioconda
+        - defaults
+      dependencies: []
+    params:
+      tax_scope: Bacteria
+      go_evidence: all
+      # threads: 4   # defaults to global threads
+
   # AMRFinderPlus — antimicrobial resistance genes and point mutations.
   # Runs in nucleotide-only mode: amrfinder -n <genome.fasta> --plus
   #

@@ -1339,3 +1339,109 @@ class TestMobileElementFinderRunner:
             pipeline = Pipeline(config)
         stages = pipeline._build_stages()
         assert stages[3] == ["mefinder"]
+
+
+# ─── EggNOGMapperRunner tests ─────────────────────────────────────────────────
+
+class TestEggNOGMapperRunner:
+
+    def _make_tool_config(self, **params) -> ToolConfig:
+        p = {"tax_scope": "Bacteria", "go_evidence": "all"}
+        p.update(params)
+        return ToolConfig(
+            name="eggnogmapper", version="latest", runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "eggnogmapper_env", "dependencies": []},
+            params=p,
+        )
+
+    def test_factory_returns_eggnogmapper_runner(self, tmp_path):
+        from bactowise.runners.eggnogmapper_runner import EggNOGMapperRunner
+        runner = RunnerFactory.create(self._make_tool_config(), tmp_path)
+        assert isinstance(runner, EggNOGMapperRunner)
+
+    def test_build_command_uses_consensus_faa(self, tmp_path):
+        from bactowise.runners.eggnogmapper_runner import EggNOGMapperRunner
+        from bactowise.utils.db_manager import _EGGNOG_DB_DIR
+        # eggnogmapper output_dir is tmp_path/eggnogmapper
+        runner = EggNOGMapperRunner(self._make_tool_config(), tmp_path, global_threads=4)
+        # Create a fake consensus FAA so the command can be built
+        faa = tmp_path / "eggnogmapper" / ".." / "consensus" / "GENE.faa"
+        faa = faa.resolve()
+        faa.parent.mkdir(parents=True, exist_ok=True)
+        faa.touch()
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(faa)
+        assert "-i" in cmd
+        assert str(faa) in cmd
+        assert "--itype" in cmd
+        assert "proteins" in cmd
+        assert "-m" in cmd
+        assert "diamond" in cmd
+        assert "--data_dir" in cmd
+        assert str(_EGGNOG_DB_DIR) in cmd
+        assert "--tax_scope" in cmd
+        assert "Bacteria" in cmd
+        assert "--go_evidence" in cmd
+        assert "--override" in cmd
+
+    def test_consensus_faa_path_resolves_correctly(self, tmp_path):
+        from bactowise.runners.eggnogmapper_runner import EggNOGMapperRunner
+        runner = EggNOGMapperRunner(self._make_tool_config(), tmp_path, global_threads=4)
+        faa = runner._consensus_faa_path()
+        # Should point to <tmp_path>/consensus/GENE.faa
+        assert faa.name == "GENE.faa"
+        assert faa.parent.name == "consensus"
+
+    def test_conda_run_cmd_uses_emapper_binary(self, tmp_path):
+        from bactowise.runners.eggnogmapper_runner import EggNOGMapperRunner
+        runner = EggNOGMapperRunner(self._make_tool_config(), tmp_path)
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._conda_run_cmd(["--version"])
+        assert "emapper.py" in cmd
+        assert "eggnogmapper_env" in cmd
+
+    def test_eggnogmapper_in_stage_4(self, tmp_path):
+        config = PipelineConfig(**{
+            "tools": [
+                {"name": "checkm",       "version": "1.2.3",               "runtime": "conda", "role": "qc"},
+                {"name": "prokka",       "version": "1.14.6",              "runtime": "conda", "depends_on": ["checkm"]},
+                {"name": "bakta",        "version": "1.9.3",               "runtime": "docker",
+                 "image": "oschwengers/bakta:1.9.3",                        "depends_on": ["checkm"]},
+                {"name": "pgap",         "version": "2024-07-18.build7555", "runtime": "pgap", "depends_on": ["checkm"]},
+                {"name": "consensus",    "version": "1.0.0",               "runtime": "conda",
+                 "depends_on": ["bakta", "prokka", "pgap"],
+                 "conda_env": {"name": "consensus_env", "dependencies": ["pandas"]}},
+                {"name": "eggnogmapper","version": "latest",               "runtime": "conda",
+                 "depends_on": ["consensus"],
+                 "conda_env": {"name": "eggnogmapper_env", "dependencies": []}},
+            ],
+            "output_dir": str(tmp_path),
+        })
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config)
+        stages = pipeline._build_stages()
+        assert stages[3] == ["eggnogmapper"]
+
+    def test_eggnogmapper_skipped_with_stage_4(self, tmp_path):
+        config = PipelineConfig(**{
+            "tools": [
+                {"name": "checkm",       "version": "1.2.3",               "runtime": "conda", "role": "qc"},
+                {"name": "prokka",       "version": "1.14.6",              "runtime": "conda", "depends_on": ["checkm"]},
+                {"name": "bakta",        "version": "1.9.3",               "runtime": "docker",
+                 "image": "oschwengers/bakta:1.9.3",                        "depends_on": ["checkm"]},
+                {"name": "pgap",         "version": "2024-07-18.build7555", "runtime": "pgap", "depends_on": ["checkm"]},
+                {"name": "consensus",    "version": "1.0.0",               "runtime": "conda",
+                 "depends_on": ["bakta", "prokka", "pgap"],
+                 "conda_env": {"name": "consensus_env", "dependencies": ["pandas"]}},
+                {"name": "eggnogmapper","version": "latest",               "runtime": "conda",
+                 "depends_on": ["consensus"],
+                 "conda_env": {"name": "eggnogmapper_env", "dependencies": []}},
+            ],
+            "output_dir": str(tmp_path),
+        })
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, skip_stages={4})
+        assert "eggnogmapper" in pipeline.skip
