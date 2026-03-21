@@ -903,3 +903,153 @@ class TestConsensusRunner:
         })
         with pytest.raises(ValueError, match="cannot be skipped"):
             Pipeline(config, skip_stages={3})
+
+
+# ─── AMRFinderPlusRunner tests ────────────────────────────────────────────────
+
+class TestAMRFinderPlusRunner:
+    """
+    Tests for AMRFinderPlusRunner — factory dispatch, command building,
+    FAA discovery, stage 4 skippability.
+    """
+
+    def _make_tool_config(self, **extra_params) -> ToolConfig:
+        params = {"plus": True}
+        params.update(extra_params)
+        return ToolConfig(
+            name="amrfinderplus",
+            version="4.0.23",
+            runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "amrfinderplus_env", "dependencies": []},
+            params=params,
+        )
+
+    def test_factory_returns_amrfinderplus_runner(self, tmp_path):
+        from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
+        tool = self._make_tool_config()
+        runner = RunnerFactory.create(tool, tmp_path)
+        assert isinstance(runner, AMRFinderPlusRunner)
+
+    def test_build_command_basic(self, tmp_path):
+        from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
+        tool   = self._make_tool_config()
+        runner = AMRFinderPlusRunner(tool, tmp_path, global_threads=4)
+
+        fasta      = tmp_path / "genome.fasta"
+        output_tsv = tmp_path / "amrfinderplus_results.tsv"
+        fasta.touch()
+
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta, output_tsv)
+
+        assert "-n" in cmd
+        assert str(fasta.resolve()) in cmd
+        assert "-p" not in cmd
+        assert "-o" in cmd
+        assert str(output_tsv) in cmd
+        assert "--plus" in cmd
+        assert "-t" in cmd
+
+    def test_build_command_with_organism(self, tmp_path):
+        from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
+        tool   = self._make_tool_config(organism="Escherichia")
+        runner = AMRFinderPlusRunner(tool, tmp_path, global_threads=4)
+
+        fasta      = tmp_path / "genome.fasta"
+        output_tsv = tmp_path / "out.tsv"
+
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta, output_tsv)
+
+        assert "--organism" in cmd
+        assert "Escherichia" in cmd
+
+    def test_build_command_no_organism_no_flag(self, tmp_path):
+        from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
+        tool   = self._make_tool_config()
+        runner = AMRFinderPlusRunner(tool, tmp_path, global_threads=4)
+
+        fasta      = tmp_path / "genome.fasta"
+        output_tsv = tmp_path / "out.tsv"
+
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta, output_tsv)
+
+        assert "--organism" not in cmd
+
+
+    def test_conda_run_cmd_uses_amrfinder_binary(self, tmp_path):
+        """Binary in conda run must be 'amrfinder', not 'amrfinderplus'."""
+        from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
+        tool   = self._make_tool_config()
+        runner = AMRFinderPlusRunner(tool, tmp_path)
+
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._conda_run_cmd(["--version"])
+
+        assert "amrfinder" in cmd
+        assert "amrfinderplus" not in cmd
+
+    def test_stage_4_is_skippable(self, tmp_path):
+        """--skip stage_4 must be accepted and resolve to amrfinderplus."""
+        config = PipelineConfig(**{
+            "tools": [
+                {"name": "checkm",        "version": "1.2.3",               "runtime": "conda", "role": "qc"},
+                {"name": "prokka",        "version": "1.14.6",              "runtime": "conda", "depends_on": ["checkm"]},
+                {"name": "bakta",         "version": "1.9.3",               "runtime": "docker",
+                 "image": "oschwengers/bakta:1.9.3",                         "depends_on": ["checkm"]},
+                {"name": "pgap",          "version": "2024-07-18.build7555", "runtime": "pgap",  "depends_on": ["checkm"]},
+                {"name": "consensus",     "version": "1.0.0",               "runtime": "conda",
+                 "depends_on": ["bakta", "prokka", "pgap"],
+                 "conda_env": {"name": "consensus_env", "dependencies": ["pandas"]}},
+                {"name": "amrfinderplus", "version": "4.0.23",              "runtime": "conda",
+                 "depends_on": ["consensus"],
+                 "conda_env": {"name": "amrfinderplus_env", "dependencies": []}},
+            ],
+            "output_dir": str(tmp_path),
+        })
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config, skip_stages={4})
+        assert "amrfinderplus" in pipeline.skip
+        assert "consensus" not in pipeline.skip
+
+    def test_stage_4_appears_in_stage_4_of_full_pipeline(self, tmp_path):
+        """amrfinderplus must land in stage 4 of the full pipeline stage map."""
+        config = PipelineConfig(**{
+            "tools": [
+                {"name": "checkm",        "version": "1.2.3",              "runtime": "conda", "role": "qc"},
+                {"name": "prokka",        "version": "1.14.6",             "runtime": "conda", "depends_on": ["checkm"]},
+                {"name": "bakta",         "version": "1.9.3",              "runtime": "docker",
+                 "image": "oschwengers/bakta:1.9.3",                        "depends_on": ["checkm"]},
+                {"name": "pgap",          "version": "2024-07-18.build7555","runtime": "pgap", "depends_on": ["checkm"]},
+                {"name": "consensus",     "version": "1.0.0",              "runtime": "conda",
+                 "depends_on": ["bakta", "prokka", "pgap"],
+                 "conda_env": {"name": "consensus_env", "dependencies": ["pandas"]}},
+                {"name": "amrfinderplus", "version": "4.0.23",             "runtime": "conda",
+                 "depends_on": ["consensus"],
+                 "conda_env": {"name": "amrfinderplus_env", "dependencies": []}},
+            ],
+            "output_dir": str(tmp_path),
+        })
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config)
+
+        stages = pipeline._build_stages()
+        assert stages[0] == ["checkm"]
+        assert set(stages[1]) == {"prokka", "bakta", "pgap"}
+        assert stages[2] == ["consensus"]
+        assert stages[3] == ["amrfinderplus"]
+
+    def test_stage_2_still_not_skippable(self, tmp_path):
+        """Ensure stage 2 remains unskippable after adding stage 4."""
+        config = PipelineConfig(**{
+            "tools": [
+                {"name": "prokka", "version": "1.14.6", "runtime": "conda"},
+            ],
+            "output_dir": str(tmp_path),
+        })
+        with pytest.raises(ValueError, match="cannot be skipped"):
+            Pipeline(config, skip_stages={2})

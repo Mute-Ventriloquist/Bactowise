@@ -3,9 +3,10 @@
 Assess bacterial genome quality and annotate genes — one command, one config file.
 
 ```
-Stage 1:  CheckM                 → completeness & contamination check
+Stage 1:  CheckM                 → completeness & contamination check (skippable)
 Stage 2:  Prokka + Bakta + PGAP  → gene annotation (run in parallel)
 Stage 3:  Consensus Engine       → merge annotations into a single source of truth
+Stage 4:  AMRFinderPlus + ...    → supplementary annotations (skippable)
 ```
 
 If the genome fails QC thresholds, BactoWise warns you and continues — the scientist makes the final call.
@@ -87,9 +88,11 @@ Results land in `./results/` by default. Use `-o` to write to a different locati
 bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" -o /scratch/my_run
 ```
 
-**Skip the QC stage** (stage 1 is the only skippable stage):
+**Skip the QC stage** (stage 1) or supplementary annotations (stage 4):
 ```bash
 bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_1
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_4
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_1 --skip stage_4
 ```
 
 **Bypass annotation with pre-computed GFF files:**

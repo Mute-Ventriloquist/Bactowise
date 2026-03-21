@@ -52,7 +52,10 @@ class Pipeline:
         Stage 2: prokka + bakta + pgap     -- annotation (cannot be skipped)
     """
 
-    SKIPPABLE_STAGES: frozenset = frozenset({1})
+    # Stages the user is permitted to skip.
+    # Stages 2 (annotation) and 3 (consensus) are core and never skippable.
+    # Stage 1 (QC) and stage 4+ (supplementary) are optional and skippable.
+    SKIPPABLE_STAGES: frozenset = frozenset({1, 4})
 
     def __init__(
         self,
@@ -67,12 +70,15 @@ class Pipeline:
         skip_stages = set(skip_stages or [])
         invalid_stages = skip_stages - self.SKIPPABLE_STAGES
         if invalid_stages:
-            unskippable_tools = {t.name for t in config.tools if t.depends_on}
+            unskippable_tools = {
+                t.name for t in config.tools
+                if t.depends_on and t.name not in
+                {u.name for u in config.tools if not u.depends_on}
+            }
             raise ValueError(
                 f"Stage(s) {sorted(invalid_stages)} cannot be skipped.\n"
-                f"Only stage 1 (QC) may be skipped via --skip stage_1.\n"
-                f"Stage 2 and beyond contain the core annotation tools "
-                f"({', '.join(sorted(unskippable_tools))}) and cannot be skipped."
+                f"Skippable stages: 1 (QC) and 4 (supplementary).\n"
+                f"Stages 2 (annotation) and 3 (consensus) are core and cannot be skipped."
             )
         self.skip_stages: frozenset = frozenset(skip_stages)
         self.skip: set[str] = self._resolve_skip_stages(skip_stages)
@@ -92,14 +98,38 @@ class Pipeline:
     def _resolve_skip_stages(self, skip_stages: set[int]) -> set[str]:
         """
         Convert a set of stage numbers into the set of tool names to skip.
+
         Stage 1 = all tools with no depends_on (QC tools).
+        Stage 4 = all tools that depend only on stage 3 tools (supplementary).
+        This is deterministic from the config alone.
         """
         if not skip_stages:
             return set()
-        skipped: set[str] = set()
-        if 1 in skip_stages:
-            skipped |= {t.name for t in self.config.tools if not t.depends_on}
-        return skipped
+
+        # Build the full stage map to resolve which tools belong to which stage
+        tool_configs = {t.name: t for t in self.config.tools}
+        completed: set[str] = set()
+        remaining = list(tool_configs.keys())
+        stage_assignment: dict[str, int] = {}
+        stage_num = 1
+
+        while remaining:
+            ready = [
+                name for name in remaining
+                if all(dep in completed for dep in tool_configs[name].depends_on)
+            ]
+            if not ready:
+                break
+            for name in ready:
+                stage_assignment[name] = stage_num
+            completed.update(ready)
+            remaining = [n for n in remaining if n not in ready]
+            stage_num += 1
+
+        return {
+            name for name, stage in stage_assignment.items()
+            if stage in skip_stages
+        }
 
     def preflight(self) -> None:
         console.print()

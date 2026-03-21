@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from bactowise.models.config import ToolConfig
+from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
 from bactowise.runners.base import BaseRunner
 from bactowise.runners.checkm_runner import CheckMRunner
 from bactowise.runners.conda_runner import CondaToolRunner
@@ -27,6 +28,8 @@ class RunnerFactory:
             return PGAPRunner(tool_config, output_dir, organism, global_threads)
         if tool_config.name == "consensus":
             return ConsensusRunner(tool_config, output_dir, organism, global_threads)
+        if tool_config.name == "amrfinderplus":
+            return AMRFinderPlusRunner(tool_config, output_dir, organism, global_threads)
 
         if tool_config.runtime == "conda":
             return CondaToolRunner(tool_config, output_dir, organism, global_threads)

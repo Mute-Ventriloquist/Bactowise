@@ -11,6 +11,8 @@
 
 tools:
 
+  # ── Stage 1: QC (skippable with --skip stage_1) ──────────────────────────
+
   - name: checkm
     version: "1.2.3"
     runtime: conda
@@ -32,6 +34,8 @@ tools:
       rank: domain        # used by taxonomy_wf — 'domain' is correct for bacteria
       taxon: Bacteria     # used by taxonomy_wf — set to your domain/phylum/class as needed
       threads: 4
+
+  # ── Stage 2: Annotation ───────────────────────────────────────────────────
 
   - name: prokka
     version: "1.14.6"
@@ -65,33 +69,23 @@ tools:
       min-contig-length: 200
       threads: 4
 
-# ── PGAP ──────────────────────────────────────────────────────────────────────
-# pgap.py and its supplemental data are downloaded automatically on first run,
-# or explicitly with: bactowise db download --pgap
-# The only external requirement is a container runtime (Singularity or Docker).
-#
-# organism is required by PGAP — set it to the genus or genus species of your
-# input genome. This does not need to be an exact NCBI taxonomy match.
+  # pgap.py and its supplemental data are downloaded automatically on first run,
+  # or explicitly with: bactowise db download --pgap
+  # The only external requirement is a container runtime (Singularity or Docker).
+  # organism is passed via -n/--organism on the command line — not here.
 
   - name: pgap
     version: "2024-07-18.build7555"
     runtime: pgap
     depends_on: [checkm]
     params:
-      # organism is passed via -n/--organism on the command line — not here.
       report_usage: false    # false = pass -n to pgap.py (no anonymous usage reporting)
       # pgap_input_dir: "~/.bactowise/databases/pgap"  # override default data dir if needed
 
-# ── Consensus Engine (Stage 3) ────────────────────────────────────────────────
-# The BactoWise Consensus Engine merges annotations from Bakta, Prokka, and
-# PGAP into a single consensus source of truth.
-#
-# It depends on all three stage 2 annotation tools. BactoWise automatically
-# collects their outputs, stages them with tool-name-prefixed filenames, and
-# invokes the engine via 'conda run -n consensus_env python consensus_engine.py'.
-#
-# The consensus_env conda environment is created automatically on first run.
-# It requires only pandas and openpyxl (for .xlsx output).
+  # ── Stage 3: Consensus Engine ─────────────────────────────────────────────
+  # Merges Bakta, Prokka, and PGAP annotations into a single source of truth.
+  # Invoked via: conda run -n consensus_env python consensus_engine.py
+  # The consensus_env is created automatically on first run.
 
   - name: consensus
     version: "1.0.0"
@@ -105,6 +99,35 @@ tools:
       dependencies:
         - pandas
         - openpyxl
+
+  # ── Stage 4: Supplementary Annotations (skippable with --skip stage_4) ───
+
+  # AMRFinderPlus — antimicrobial resistance genes and point mutations.
+  # Runs in nucleotide-only mode: amrfinder -n <genome.fasta> --plus
+  #
+  # Optional params:
+  #   organism : AMRFinderPlus taxon name for point mutation detection.
+  #              Must be a value from `amrfinder --list_organisms`.
+  #              Examples: Escherichia, Salmonella, Staphylococcus_aureus
+  #              Omit entirely if the organism is not in the supported list.
+  #   plus     : include virulence/stress/biocide genes (default: true)
+  #   threads  : override global thread count for this tool
+
+  - name: amrfinderplus
+    version: "4.0.23"
+    runtime: conda
+    depends_on: [consensus]
+    conda_env:
+      name: "amrfinderplus_env"
+      channels:
+        - bioconda
+        - conda-forge
+        - defaults
+      dependencies: []
+    params:
+      plus: true
+      # organism: "Escherichia"   # uncomment for point mutation detection
+      # threads: 4                # defaults to global threads
 
 output_dir: "./results"
 threads: 4

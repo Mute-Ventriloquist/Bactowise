@@ -210,8 +210,9 @@ def run(
     skip: list[str] = typer.Option(
         [], "--skip",
         help=(
-            "Skip a pipeline stage. Only 'stage_1' (QC) can be skipped. "
-            "Stage 2 (annotation) cannot be skipped."
+            "Skip a pipeline stage. Repeatable. "
+            "Skippable stages: stage_1 (QC), stage_4 (supplementary). "
+            "Stages 2 and 3 cannot be skipped."
         ),
     ),
     gff: list[str] = typer.Option(
@@ -233,6 +234,8 @@ def run(
     Runs tools in dependency order. Within each stage, tools run in parallel:
       Stage 1: checkm                    -- quality gate (skippable)
       Stage 2: prokka + bakta + pgap     -- annotation (cannot be skipped)
+      Stage 3: consensus                 -- consensus engine (cannot be skipped)
+      Stage 4: amrfinderplus + ...       -- supplementary annotations (skippable)
 
     \b
     The organism name (-n) must be a valid NCBI Taxonomy name. It is passed
@@ -244,8 +247,10 @@ def run(
     created automatically. Databases are downloaded if not already present.
 
     \b
-    Skip the QC stage entirely with --skip stage_1:
+    Skip stages with --skip. Skippable: stage_1 (QC), stage_4 (supplementary).
       bactowise run -f genome.fasta -n "Escherichia coli" --skip stage_1
+      bactowise run -f genome.fasta -n "Escherichia coli" --skip stage_4
+      bactowise run -f genome.fasta -n "Escherichia coli" --skip stage_1 --skip stage_4
 
     \b
     GFF bypass -- provide pre-computed annotation for any subset of tools.

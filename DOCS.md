@@ -8,8 +8,9 @@
   - [5. Bypassing annotation with pre-computed GFF files](#5-bypassing-annotation-with-pre-computed-gff-files)
   - [6. Understanding QC output](#6-understanding-qc-output)
   - [7. Stage 3 — BactoWise Consensus Engine](#7-stage-3--bactowise-consensus-engine)
-  - [8. Downstream analysis — pangenome with Panaroo](#8-downstream-analysis--pangenome-with-panaroo)
-  - [9. Troubleshooting](#9-troubleshooting)
+  - [8. Stage 4 — Supplementary Annotations](#8-stage-4--supplementary-annotations)
+  - [9. Downstream analysis — pangenome with Panaroo](#9-downstream-analysis--pangenome-with-panaroo)
+  - [10. Troubleshooting](#10-troubleshooting)
 - [Developer Guide](#developer-guide)
   - [1. pipeline.yaml field reference](#1-pipelineyaml-field-reference)
   - [2. Modifying pipeline.yaml locally](#2-modifying-pipelineyaml-locally)
@@ -266,19 +267,28 @@ output directory or one specified with `-o`:
     ├── pipeline.log
     └── logs/
         └── consensus.log
+amrfinderplus/               ← Stage 4: supplementary (present unless --skip stage_4)
+    ├── amrfinderplus_results.tsv
+    └── logs/
+        └── amrfinderplus.log
 ```
 
 ---
 
 ## 4. Skipping stages
 
-Use `--skip stage_1` to skip the QC stage entirely. Stage 1 (CheckM) is the
-only stage that can be skipped — stage 2 (annotation) is the core of the
-pipeline and cannot be skipped.
+Two stages are skippable: stage 1 (QC) and stage 4 (supplementary annotations).
+Stages 2 (annotation) and 3 (consensus) are core and cannot be skipped.
 
 ```bash
-# Skip QC — annotation still runs without the quality gate
+# Skip QC
 bactowise run -f genome.fasta -n "Escherichia coli" --skip stage_1
+
+# Skip supplementary annotations (stage 4)
+bactowise run -f genome.fasta -n "Escherichia coli" --skip stage_4
+
+# Skip both
+bactowise run -f genome.fasta -n "Escherichia coli" --skip stage_1 --skip stage_4
 ```
 
 **When to skip stage 1:**
@@ -286,28 +296,23 @@ bactowise run -f genome.fasta -n "Escherichia coli" --skip stage_1
 - You are running a quick test and want to skip the ~2 GB CheckM database download
 - You have QC results from another tool and just want annotation
 
-**What happens when you skip stage 1:**
-- CheckM is excluded from preflight checks entirely (no conda env check, no database check)
-- Annotation tools (Prokka, Bakta, PGAP) run immediately without waiting for a QC result
-- A warning is printed before annotation begins to make clear that no quality gate was applied
-- The final summary shows `⊘ checkm → skipped (stage 1)` so the record is unambiguous
+**When to skip stage 4:**
+- You only need the core annotation outputs and don't require AMR or other supplementary results
+- Running on a time-constrained system and want the fastest possible run
 
-**Attempting to skip stage 2 raises an error immediately:**
+**Attempting to skip stages 2 or 3 raises an error immediately:**
 ```
 ✗ Stage(s) [2] cannot be skipped.
-  Only stage 1 (QC) may be skipped via --skip stage_1.
-  Stage 2 and beyond contain the core annotation tools (bakta, pgap, prokka)
-  and cannot be skipped.
+  Skippable stages: 1 (QC) and 4 (supplementary).
+  Stages 2 (annotation) and 3 (consensus) are core and cannot be skipped.
 ```
 
-**Combining with --gff** (the maximalist use case — skip QC and bypass some annotation tools):
+**Combining --skip stage_1 with --gff** (the maximalist use case):
 ```bash
 bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
   --skip stage_1 \
   --gff pgap:/path/to/pgap.gff
 ```
-This skips CheckM entirely and uses a pre-computed PGAP result, while Prokka
-and Bakta still run normally.
 
 ---
 
@@ -506,7 +511,64 @@ bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
 
 ---
 
-## 8. Downstream analysis — pangenome with Panaroo
+## 8. Stage 4 — Supplementary Annotations
+
+Stage 4 provides additional biological context beyond the core annotation. It
+is **skippable** with `--skip stage_4` and runs after stage 3 completes. All
+stage 4 tools depend on the consensus engine output.
+
+### AMRFinderPlus — antimicrobial resistance genes and point mutations
+
+AMRFinderPlus scans the genome for acquired AMR genes, virulence factors,
+stress resistance genes, and — for supported taxa — known point mutations
+associated with resistance.
+
+**Inputs used:**
+- Genome FASTA (original `-f` input)
+- `<output_dir>/consensus/GENE.faa` — protein FASTA from stage 3
+
+BactoWise runs AMRFinderPlus in combined nucleotide + protein mode for maximum
+sensitivity without the fragility of GFF-linked mode.
+
+**Output:**
+```
+<output_dir>/amrfinderplus/
+    amrfinderplus_results.tsv   tab-delimited AMR findings
+    logs/amrfinderplus.log
+```
+
+**Configuring point mutation detection:**
+
+AMRFinderPlus supports taxon-specific point mutation screening for a subset of
+organisms. To enable it, set `organism` in `pipeline.yaml` to one of the values
+returned by `amrfinder --list_organisms`. This is separate from the `-n` organism
+name — it must match AMRFinderPlus's own taxon list exactly.
+
+```yaml
+- name: amrfinderplus
+  params:
+    plus: true
+    organism: "Escherichia"   # enables point mutation detection
+```
+
+Supported organism values include: `Acinetobacter_baumannii`, `Campylobacter`,
+`Clostridioides_difficile`, `Enterococcus_faecalis`, `Enterococcus_faecium`,
+`Escherichia`, `Klebsiella`, `Neisseria`, `Pseudomonas_aeruginosa`,
+`Salmonella`, `Staphylococcus_aureus`, `Staphylococcus_pseudintermedius`,
+`Streptococcus_agalactiae`, `Streptococcus_pneumoniae`, `Streptococcus_pyogenes`,
+`Vibrio_cholerae`. Omit `organism` entirely if your organism is not in this list.
+
+**Database:** downloaded automatically via `amrfinder -u` during preflight.
+No manual setup required.
+
+**Skipping stage 4:**
+```bash
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_4
+```
+
+---
+
+## 9. Downstream analysis — pangenome with Panaroo
 
 Panaroo is a pangenome pipeline that takes GFF annotation files as input and
 computes core and accessory genome statistics across multiple bacterial isolates.
@@ -566,7 +628,7 @@ all available options.
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Error | Fix |
 |---|---|
