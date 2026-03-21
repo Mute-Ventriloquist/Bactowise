@@ -88,6 +88,9 @@ class MobileElementFinderRunner(CondaToolRunner):
                 f"  [success]✓[/success]  Conda env [bold]'{env_name}'[/bold] "
                 f"already exists — skipping creation."
             )
+            # Always ensure the shim is present — covers existing envs that
+            # were created before this fix was added.
+            self._write_pkg_resources_shim(env_name)
             return
 
         console.print(f"\n  Conda env [bold]'{env_name}'[/bold] not found. Creating it now...")
@@ -143,10 +146,58 @@ class MobileElementFinderRunner(CondaToolRunner):
                 f"       conda run -n {env_name} pip install MobileElementFinder --no-deps"
             )
 
+        # MobileElementFinder imports pkg_resources at startup but setuptools
+        # is not always present in conda envs. Write the same minimal shim
+        # used for CheckM so the import succeeds without pulling in setuptools.
+        self._write_pkg_resources_shim(env_name)
+
         console.print(
             f"\n  [success]✓[/success]  Conda env [bold]'{env_name}'[/bold] "
             f"created successfully."
         )
+
+    def _write_pkg_resources_shim(self, env_name: str) -> None:
+        """
+        Write a minimal pkg_resources.py shim to the env's site-packages.
+        MobileElementFinder calls pkg_resources.resource_string() at import
+        time to load its bundled database files. The shim implements only
+        what is needed and is skipped if the real setuptools is already present.
+        """
+        import glob
+        conda_root  = self._find_conda_root()
+        base        = Path(conda_root) / "envs" / env_name / "lib"
+
+        matches = glob.glob(str(base / "python3.*" / "site-packages"))
+        if not matches:
+            return
+        site_packages = Path(sorted(matches)[-1])
+        shim_path     = site_packages / "pkg_resources.py"
+
+        if shim_path.exists():
+            return
+
+        console.print(f"  Writing pkg_resources shim to [muted]{shim_path}[/muted]")
+        shim_path.write_text(
+            "# Minimal pkg_resources shim for MobileElementFinder\n"
+            "import os as _os, sys as _sys\n"
+            "def resource_string(package_or_requirement, resource_name):\n"
+            "    if isinstance(package_or_requirement, str):\n"
+            "        mod = _sys.modules.get(package_or_requirement)\n"
+            "        base = _os.path.dirname(mod.__file__) if mod else _os.getcwd()\n"
+            "    else:\n"
+            "        base = _os.path.dirname(package_or_requirement.__file__)\n"
+            "    path = _os.path.join(base, resource_name)\n"
+            "    with open(path, 'rb') as f:\n"
+            "        return f.read()\n"
+            "def resource_filename(package_or_requirement, resource_name):\n"
+            "    if isinstance(package_or_requirement, str):\n"
+            "        mod = _sys.modules.get(package_or_requirement)\n"
+            "        base = _os.path.dirname(mod.__file__) if mod else _os.getcwd()\n"
+            "    else:\n"
+            "        base = _os.path.dirname(package_or_requirement.__file__)\n"
+            "    return _os.path.join(base, resource_name)\n"
+        )
+        console.print(f"  [success]✓[/success]  pkg_resources shim installed.")
 
     # ── Run ───────────────────────────────────────────────────────────────────
 
