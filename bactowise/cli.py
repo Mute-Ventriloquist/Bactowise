@@ -154,16 +154,16 @@ def db_status():
     console.print("  [bold white]Stage 4 — Supplementary[/bold white]")
     console.print(
         f"    {'[success]✓[/success]' if amrfinder_ok else '[error]✗[/error]'}"
-        f"  AMRFinderPlus → [muted]"
-        + (str(amrfinder_path) if amrfinder_path else "not found (run bactowise to install)")
-        + "[/muted]"
+        f"  AMRFinderPlus → "
+        + (f"[muted]{amrfinder_path}[/muted]" if amrfinder_path
+           else "[muted]not found — run bactowise (amrfinder -u runs automatically)[/muted]")
     )
     console.print(
         f"    {'[success]✓[/success]' if phigaro_ok else '[error]✗[/error]'}"
         f"  Phigaro       → [muted]{_PHIGARO_DB_DIR}[/muted]"
     )
 
-    all_core_ok = checkm_ok and bakta_ok and pgap_ok
+    all_core_ok   = checkm_ok and bakta_ok and pgap_ok
     all_stage4_ok = amrfinder_ok and phigaro_ok
 
     console.print()

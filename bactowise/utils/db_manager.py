@@ -70,7 +70,9 @@ _PHIGARO_HMM_FILE  = "allpvoghmms"  # downloaded before config.yml is written
 # by searching common conda root locations for the known marker file AMRProt.fa.
 _AMRFINDERPLUS_ENV_NAME   = "amrfinderplus_env"
 _AMRFINDERPLUS_DB_SUBPATH = Path("envs") / _AMRFINDERPLUS_ENV_NAME / "share" / "amrfinderplus" / "data"
-_AMRFINDERPLUS_DB_MARKER  = "AMRProt.fa"
+# Database lives in a versioned subdir: data/YYYY-MM-DD.#/AMRProt
+# We glob for AMRProt in any subdirectory under data/
+_AMRFINDERPLUS_DB_MARKER  = "AMRProt"
 
 # Common conda root locations to search when locating the amrfinderplus database
 _CONDA_ROOT_CANDIDATES = [
@@ -138,30 +140,35 @@ def is_phigaro_present() -> bool:
 
 def amrfinderplus_db_path() -> Path | None:
     """
-    Return the path to the AMRFinderPlus database directory if found,
-    or None if the conda env or database is not yet present.
+    Return the path to the AMRFinderPlus database directory if found, or None.
 
-    Searches common conda root locations for the amrfinderplus_env data
-    directory. The database is self-managed by `amrfinder -u` and cannot
-    be redirected to ~/.bactowise/databases/.
+    Database structure inside the conda env:
+        share/amrfinderplus/data/
+            latest/          ← symlink to most recent version
+            YYYY-MM-DD.#/    ← versioned directory containing AMRProt, AMR.LIB etc.
+
+    We glob for AMRProt inside any subdirectory of the data/ directory.
     """
     import os
+    import glob as _glob
     candidates = list(_CONDA_ROOT_CANDIDATES)
 
-    # Also check CONDA_PREFIX_1 and CONDA_PREFIX from the environment
     for env_var in ("CONDA_PREFIX_1", "CONDA_PREFIX"):
         val = os.environ.get(env_var)
         if val:
             p = Path(val)
-            # CONDA_PREFIX points to the active env; walk up to find root
             for candidate in (p, p.parent.parent):
                 if (candidate / "envs").exists():
                     candidates.insert(0, candidate)
 
     for root in candidates:
-        db_dir = root / _AMRFINDERPLUS_DB_SUBPATH
-        if (db_dir / _AMRFINDERPLUS_DB_MARKER).exists():
-            return db_dir
+        data_dir = root / _AMRFINDERPLUS_DB_SUBPATH
+        if not data_dir.exists():
+            continue
+        # Look for AMRProt in any subdirectory (versioned or latest symlink)
+        matches = _glob.glob(str(data_dir / "*" / _AMRFINDERPLUS_DB_MARKER))
+        if matches:
+            return Path(matches[0]).parent   # return the versioned dir
 
     return None
 
