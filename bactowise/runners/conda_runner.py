@@ -75,10 +75,19 @@ class CondaToolRunner(BaseRunner):
 
         conda_bin = self._find_conda_binary()
 
-        packages = [f"{self.config.name}={self.config.version}"]
+        # Omit the version pin when version is "latest" — conda installs the
+        # newest compatible build. Pinning "latest" is not a valid conda spec.
+        if self.config.version and self.config.version != "latest":
+            packages = [f"{self.config.name}={self.config.version}"]
+        else:
+            packages = [self.config.name]
         packages += env_config.dependencies
 
-        cmd = [conda_bin, "create", "-n", env_name, "-y"]
+        # --strict-channel-priority prevents conda mixing builds from conda-forge
+        # and bioconda for low-level libraries (libcurl, libnghttp2 etc.) which
+        # causes unsatisfiable dependency conflicts. Channel order must be
+        # conda-forge first, then bioconda.
+        cmd = [conda_bin, "create", "-n", env_name, "-y", "--strict-channel-priority"]
         for channel in env_config.channels:
             cmd += ["-c", channel]
         cmd += packages

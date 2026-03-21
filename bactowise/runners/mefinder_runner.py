@@ -96,10 +96,15 @@ class MobileElementFinderRunner(CondaToolRunner):
 
         conda_bin = self._find_conda_binary()
 
-        # Step 1: create env with conda deps (blast, kma) and python
-        conda_deps = ["python", "blast", "kma"] + [
+        # Step 1: create env with conda deps.
+        # - python=3.11 is pinned because biopython<=1.80 (required by
+        #   MobileElementFinder) has no pre-built wheel for Python 3.12+
+        #   and would require gcc to compile from source.
+        # - biopython is installed via conda here to get the pre-built binary,
+        #   then pip install uses --no-deps to skip re-fetching it.
+        conda_deps = ["python=3.11", "biopython", "blast", "kma"] + [
             d for d in env_config.dependencies
-            if d not in ("MobileElementFinder", "mobileelement-finder")
+            if d not in ("MobileElementFinder", "mobileelement-finder", "biopython")
         ]
 
         cmd = [conda_bin, "create", "-n", env_name, "-y", "--strict-channel-priority"]
@@ -117,13 +122,15 @@ class MobileElementFinderRunner(CondaToolRunner):
                 f"     {' '.join(cmd)}"
             )
 
-        # Step 2: install MobileElementFinder via pip into the env
+        # Step 2: install MobileElementFinder via pip into the env.
+        # --no-deps skips biopython reinstallation — it is already present
+        # as the conda binary build and does not need to be rebuilt from source.
         pip_cmd = [
             conda_bin, "run", "--no-capture-output",
             "-n", env_name,
-            "pip", "install", "MobileElementFinder",
+            "pip", "install", "MobileElementFinder", "--no-deps",
         ]
-        console.print(f"  Installing MobileElementFinder via pip...")
+        console.print(f"  Installing MobileElementFinder via pip (--no-deps)...")
         console.print(f"  Running: {' '.join(pip_cmd)}\n")
 
         result = subprocess.run(pip_cmd, text=True)
@@ -132,7 +139,7 @@ class MobileElementFinderRunner(CondaToolRunner):
             raise RuntimeError(
                 f"  ✗  Failed to install MobileElementFinder via pip.\n"
                 f"     Try running manually:\n"
-                f"       conda run -n {env_name} pip install MobileElementFinder"
+                f"       conda run -n {env_name} pip install MobileElementFinder --no-deps"
             )
 
         console.print(
