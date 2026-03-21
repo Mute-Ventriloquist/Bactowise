@@ -86,10 +86,17 @@ class MobileElementFinderRunner(CondaToolRunner):
         if binary_path.exists():
             console.print(
                 f"  [success]✓[/success]  Conda env [bold]'{env_name}'[/bold] "
-                f"already exists — skipping creation."
+                f"already exists — checking pip packages..."
             )
-            # Always ensure the shim is present — covers existing envs that
-            # were created before this fix was added.
+            # Re-run pip install to ensure all deps are present.
+            # This is idempotent — pip skips anything already installed.
+            # Catches envs created by earlier broken installs (--no-deps).
+            conda_bin = self._find_conda_binary()
+            subprocess.run(
+                [conda_bin, "run", "--no-capture-output", "-n", env_name,
+                 "pip", "install", "MobileElementFinder"],
+                text=True,
+            )
             self._write_pkg_resources_shim(env_name)
             return
 
