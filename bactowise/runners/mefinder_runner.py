@@ -127,14 +127,15 @@ class MobileElementFinderRunner(CondaToolRunner):
             )
 
         # Step 2: install MobileElementFinder via pip into the env.
-        # --no-deps skips biopython reinstallation — it is already present
-        # as the conda binary build and does not need to be rebuilt from source.
+        # biopython is already present from the conda step above, so pip
+        # will see the constraint is satisfied and skip the source build.
+        # All other deps (mgedb, cattrs, bcbio-gff etc.) install normally.
         pip_cmd = [
             conda_bin, "run", "--no-capture-output",
             "-n", env_name,
-            "pip", "install", "MobileElementFinder", "--no-deps",
+            "pip", "install", "MobileElementFinder",
         ]
-        console.print(f"  Installing MobileElementFinder via pip (--no-deps)...")
+        console.print(f"  Installing MobileElementFinder via pip...")
         console.print(f"  Running: {' '.join(pip_cmd)}\n")
 
         result = subprocess.run(pip_cmd, text=True)
@@ -143,7 +144,7 @@ class MobileElementFinderRunner(CondaToolRunner):
             raise RuntimeError(
                 f"  ✗  Failed to install MobileElementFinder via pip.\n"
                 f"     Try running manually:\n"
-                f"       conda run -n {env_name} pip install MobileElementFinder --no-deps"
+                f"       conda run -n {env_name} pip install MobileElementFinder"
             )
 
         # MobileElementFinder imports pkg_resources at startup but setuptools
