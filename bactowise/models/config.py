@@ -66,6 +66,13 @@ class ToolConfig(BaseModel):
     depends_on: list[str] = []
     params: dict = {}
 
+    @field_validator("params", mode="before")
+    @classmethod
+    def coerce_null_params(cls, v):
+        # A params block with only comments parses as None in YAML.
+        # Treat None as an empty dict so the config remains valid.
+        return v if v is not None else {}
+
     @model_validator(mode="after")
     def validate_fields(self) -> ToolConfig:
         if self.runtime == "docker" and self.image is None:
