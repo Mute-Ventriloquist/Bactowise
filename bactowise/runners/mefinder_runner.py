@@ -97,14 +97,15 @@ class MobileElementFinderRunner(CondaToolRunner):
         conda_bin = self._find_conda_binary()
 
         # Step 1: create env with conda deps.
-        # - python=3.11 is pinned because biopython<=1.80 (required by
-        #   MobileElementFinder) has no pre-built wheel for Python 3.12+
-        #   and would require gcc to compile from source.
-        # - biopython is installed via conda here to get the pre-built binary,
-        #   then pip install uses --no-deps to skip re-fetching it.
-        conda_deps = ["python=3.11", "biopython", "blast", "kma"] + [
-            d for d in env_config.dependencies
-            if d not in ("MobileElementFinder", "mobileelement-finder", "biopython")
+        # - python=3.11 pinned: biopython has no pre-built wheel for 3.12+
+        # - All MobileElementFinder pure-python deps that have conda packages
+        #   are installed here so pip install --no-deps doesn't miss them.
+        #   (pyyaml, click, attrs, tabulate all have conda-forge packages)
+        _EXCLUDE = {"MobileElementFinder", "mobileelement-finder",
+                    "biopython", "pyyaml", "click", "attrs", "tabulate"}
+        conda_deps = ["python=3.11", "biopython", "pyyaml", "click",
+                      "attrs", "tabulate", "blast", "kma"] + [
+            d for d in env_config.dependencies if d not in _EXCLUDE
         ]
 
         cmd = [conda_bin, "create", "-n", env_name, "-y", "--strict-channel-priority"]
