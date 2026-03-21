@@ -6,7 +6,7 @@ from pathlib import Path
 from bactowise.models.config import ToolConfig
 from bactowise.runners.conda_runner import CondaToolRunner
 from bactowise.utils.console import console
-from bactowise.utils.db_manager import _PHIGARO_DB_DIR, is_phigaro_present
+from bactowise.utils.db_manager import _PHIGARO_DB_DIR, _PHIGARO_HMM_FILE, is_phigaro_present
 
 
 class PhigaroRunner(CondaToolRunner):
@@ -124,15 +124,23 @@ class PhigaroRunner(CondaToolRunner):
 
     def _ensure_phigaro_setup(self) -> None:
         """
-        Run phigaro-setup if the Phigaro database is not yet present.
+        Run phigaro-setup if the Phigaro database/config is not yet complete.
 
-        Correct flags (from phigaro-setup --help):
-            -c CONFIG   path for the config file
-            -p PVOG     directory to store pVOG HMM profiles
-            -f          force / non-interactive (no prompts)
-            --no-updatedb  skip sudo updatedb (required for non-root users)
+        phigaro-setup has three interactive prompts answered via stdin:
+            1. Prodigal binary path  (Enter = use default from conda env)
+            2. hmmsearch binary path (Enter = use default from conda env)
+            3. Download test data?   (N = skip, we only need the HMM profiles)
+
+        If the HMM files are already present (e.g. from a previously interrupted
+        setup) but config.yml is missing, setup re-runs without re-downloading
+        the ~1.5 GB profiles — phigaro-setup skips files that already exist.
         """
-        if is_phigaro_present():
+        pvog_dir    = _PHIGARO_DB_DIR / "pvog"
+        config_file = _PHIGARO_DB_DIR / "config.yml"
+        hmm_present = (pvog_dir / _PHIGARO_HMM_FILE).exists()
+        cfg_present = config_file.exists()
+
+        if cfg_present:
             console.print(
                 f"  [success]✓[/success]  Phigaro database found: "
                 f"[muted]{_PHIGARO_DB_DIR}[/muted]"
@@ -140,13 +148,17 @@ class PhigaroRunner(CondaToolRunner):
             return
 
         _PHIGARO_DB_DIR.mkdir(parents=True, exist_ok=True)
-        pvog_dir    = _PHIGARO_DB_DIR / "pvog"
-        config_file = _PHIGARO_DB_DIR / "config.yml"
 
-        console.print(
-            "  Phigaro database not found. Running phigaro-setup "
-            "(this is a one-time step, ~1.5 GB download)..."
-        )
+        if hmm_present:
+            console.print(
+                "  Phigaro HMM profiles found but config.yml missing. "
+                "Re-running phigaro-setup to write config (no re-download needed)..."
+            )
+        else:
+            console.print(
+                "  Phigaro database not found. Running phigaro-setup "
+                "(this is a one-time step, ~1.5 GB download)..."
+            )
 
         result = subprocess.run(
             self._conda_run_cmd_for(
@@ -158,11 +170,11 @@ class PhigaroRunner(CondaToolRunner):
                     "--no-updatedb",
                 ],
             ),
-            input="\n\n",   # auto-select defaults for prodigal and hmmsearch prompts
+            input="\n\nN\n",   # prodigal (Enter), hmmsearch (Enter), test data (N)
             text=True,
         )
 
-        if result.returncode != 0 or not is_phigaro_present():
+        if result.returncode != 0 or not config_file.exists():
             raise RuntimeError(
                 f"  ✗  phigaro-setup failed.\n"
                 f"     Try running manually:\n"

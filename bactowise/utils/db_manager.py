@@ -56,10 +56,13 @@ _PGAP_WRAPPER_URL      = "https://github.com/ncbi/pgap/raw/prod/scripts/pgap.py"
 _PGAP_DATA_MARKER      = "build_number"
 
 # Phigaro: phigaro-setup writes a config.yml and the pVOG HMM profiles to
-# ~/.bactowise/databases/phigaro/. BactoWise passes --config-path to
+# ~/.bactowise/databases/phigaro/. BactoWise passes -c and -p to
 # phigaro-setup to redirect the default ~/.phigaro/ location here.
+# We check for the HMM file (written before config.yml) as the presence marker
+# so a partial setup that already downloaded the database doesn't re-download.
 _PHIGARO_DB_DIR    = Path("~/.bactowise/databases/phigaro").expanduser()
 _PHIGARO_DB_MARKER = "config.yml"
+_PHIGARO_HMM_FILE  = "allpvoghmms"  # downloaded before config.yml is written
 
 # AMRFinderPlus: amrfinder -u stores the database inside the conda environment
 # at envs/amrfinderplus_env/share/amrfinderplus/data/. BactoWise cannot
@@ -124,9 +127,13 @@ def phigaro_db_path() -> Path:
 
 
 def is_phigaro_present() -> bool:
-    """Return True if the Phigaro config/database is present at the managed location.
-    Checks for config.yml written by phigaro-setup --config-path."""
-    return (_PHIGARO_DB_DIR / _PHIGARO_DB_MARKER).exists()
+    """Return True if the Phigaro database appears complete.
+    Checks for config.yml (full setup) or the allpvoghmms HMM file (database
+    downloaded but setup may have been interrupted before config was written).
+    Either is sufficient to skip re-downloading the ~1.5 GB HMM profiles."""
+    config_ok = (_PHIGARO_DB_DIR / _PHIGARO_DB_MARKER).exists()
+    hmm_ok    = (_PHIGARO_DB_DIR / "pvog" / _PHIGARO_HMM_FILE).exists()
+    return config_ok or hmm_ok
 
 
 def amrfinderplus_db_path() -> Path | None:
