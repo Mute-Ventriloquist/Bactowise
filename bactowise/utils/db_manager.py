@@ -64,6 +64,12 @@ _PHIGARO_DB_DIR    = Path("~/.bactowise/databases/phigaro").expanduser()
 _PHIGARO_DB_MARKER = "config.yml"
 _PHIGARO_HMM_FILE  = "allpvoghmms"  # downloaded before config.yml is written
 
+# Platon: mandatory database downloaded from Zenodo to ~/.bactowise/databases/platon/db/
+# Zipped ~1.6 GB, unzipped ~2.8 GB. BactoWise downloads and extracts automatically.
+_PLATON_DB_DIR     = Path("~/.bactowise/databases/platon/db").expanduser()
+_PLATON_DB_URL     = "https://zenodo.org/record/4066768/files/db.tar.gz"
+_PLATON_DB_TARBALL = "db.tar.gz"
+
 # AMRFinderPlus: amrfinder -u stores the database inside the conda environment
 # at envs/amrfinderplus_env/share/amrfinderplus/data/. BactoWise cannot
 # redirect this path (amrfinder -u has no --output flag), so it is detected
@@ -136,6 +142,75 @@ def is_phigaro_present() -> bool:
     config_ok = (_PHIGARO_DB_DIR / _PHIGARO_DB_MARKER).exists()
     hmm_ok    = (_PHIGARO_DB_DIR / "pvog" / _PHIGARO_HMM_FILE).exists()
     return config_ok or hmm_ok
+
+
+def platon_db_path() -> Path:
+    """Return the BactoWise-managed Platon database directory."""
+    return _PLATON_DB_DIR
+
+
+def is_platon_present() -> bool:
+    """Return True if the Platon database appears complete.
+    The database extracts to a db/ directory; we confirm it is non-empty."""
+    return _PLATON_DB_DIR.exists() and any(_PLATON_DB_DIR.iterdir())
+
+
+def download_platon(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path:
+    """
+    Download and extract the Platon database from Zenodo.
+
+    The tarball (~1.6 GB) is downloaded to a temporary file alongside the
+    destination directory, then extracted in-place and the tarball deleted.
+
+    Parameters
+    ----------
+    force   : re-download even if already present
+    db_root : parent directory for all BactoWise databases
+    """
+    dest_parent = db_root / "platon"
+    dest        = platon_db_path()
+
+    if is_platon_present() and not force:
+        print(f"  ✓  Platon database already present at: {dest}")
+        print(f"     (use --force-db-download to re-download)")
+        return dest
+
+    if force and dest_parent.exists():
+        print(f"  Removing existing Platon database at: {dest_parent}")
+        shutil.rmtree(dest_parent)
+
+    dest_parent.mkdir(parents=True, exist_ok=True)
+    tarball = dest_parent / _PLATON_DB_TARBALL
+
+    print(f"\n  Downloading Platon database (~1.6 GB) → {dest}")
+    print(f"  Source: {_PLATON_DB_URL}")
+
+    try:
+        _download_with_progress(_PLATON_DB_URL, tarball)
+    except Exception as e:
+        tarball.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Platon download failed: {e}\n"
+            f"Check your network connection and try again."
+        ) from e
+
+    print(f"  Extracting archive...")
+    try:
+        with tarfile.open(tarball, "r:gz") as tf:
+            tf.extractall(path=dest_parent)
+    except Exception as e:
+        raise RuntimeError(f"Failed to extract Platon tarball: {e}") from e
+    finally:
+        tarball.unlink(missing_ok=True)
+
+    if not is_platon_present():
+        raise RuntimeError(
+            f"Platon database extraction appeared to succeed but the expected "
+            f"db/ directory was not found inside {dest_parent}."
+        )
+
+    print(f"  ✓  Platon database ready at: {dest}\n")
+    return dest
 
 
 def amrfinderplus_db_path() -> Path | None:

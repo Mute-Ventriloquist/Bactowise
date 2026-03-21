@@ -1203,3 +1203,139 @@ class TestPhigaroRunner:
         assert "phigaro"       in pipeline.skip
         assert "amrfinderplus" in pipeline.skip
         assert "consensus"     not in pipeline.skip
+
+
+# ─── PlatonRunner tests ───────────────────────────────────────────────────────
+
+class TestPlatonRunner:
+
+    def _make_tool_config(self, **params) -> ToolConfig:
+        p = {"mode": "accuracy"}
+        p.update(params)
+        return ToolConfig(
+            name="platon", version="latest", runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "platon_env", "dependencies": []},
+            params=p,
+        )
+
+    def test_factory_returns_platon_runner(self, tmp_path):
+        from bactowise.runners.platon_runner import PlatonRunner
+        runner = RunnerFactory.create(self._make_tool_config(), tmp_path)
+        assert isinstance(runner, PlatonRunner)
+
+    def test_build_command_basic(self, tmp_path):
+        from bactowise.runners.platon_runner import PlatonRunner
+        from bactowise.utils.db_manager import _PLATON_DB_DIR
+        runner = PlatonRunner(self._make_tool_config(), tmp_path, global_threads=4)
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta)
+        assert str(fasta.resolve()) in cmd
+        assert "--db" in cmd
+        assert str(_PLATON_DB_DIR) in cmd
+        assert "--output" in cmd
+        assert "--prefix" in cmd
+        assert "platon_output" in cmd
+        assert "--mode" in cmd
+        assert "accuracy" in cmd
+        assert "--threads" in cmd
+
+    def test_build_command_custom_mode(self, tmp_path):
+        from bactowise.runners.platon_runner import PlatonRunner
+        runner = PlatonRunner(
+            self._make_tool_config(mode="sensitivity"), tmp_path, global_threads=4
+        )
+        fasta = tmp_path / "genome.fasta"
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta)
+        assert "sensitivity" in cmd
+
+    def test_platon_in_stage_4(self, tmp_path):
+        config = PipelineConfig(**{
+            "tools": [
+                {"name": "checkm",    "version": "1.2.3",               "runtime": "conda", "role": "qc"},
+                {"name": "prokka",    "version": "1.14.6",              "runtime": "conda", "depends_on": ["checkm"]},
+                {"name": "bakta",     "version": "1.9.3",               "runtime": "docker",
+                 "image": "oschwengers/bakta:1.9.3",                     "depends_on": ["checkm"]},
+                {"name": "pgap",      "version": "2024-07-18.build7555", "runtime": "pgap",  "depends_on": ["checkm"]},
+                {"name": "consensus", "version": "1.0.0",               "runtime": "conda",
+                 "depends_on": ["bakta", "prokka", "pgap"],
+                 "conda_env": {"name": "consensus_env", "dependencies": ["pandas"]}},
+                {"name": "platon",    "version": "latest",              "runtime": "conda",
+                 "depends_on": ["consensus"],
+                 "conda_env": {"name": "platon_env", "dependencies": []}},
+            ],
+            "output_dir": str(tmp_path),
+        })
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config)
+        stages = pipeline._build_stages()
+        assert stages[3] == ["platon"]
+
+
+# ─── MobileElementFinderRunner tests ─────────────────────────────────────────
+
+class TestMobileElementFinderRunner:
+
+    def _make_tool_config(self) -> ToolConfig:
+        return ToolConfig(
+            name="mefinder", version="latest", runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "mefinder_env", "dependencies": []},
+        )
+
+    def test_factory_returns_mefinder_runner(self, tmp_path):
+        from bactowise.runners.mefinder_runner import MobileElementFinderRunner
+        runner = RunnerFactory.create(self._make_tool_config(), tmp_path)
+        assert isinstance(runner, MobileElementFinderRunner)
+
+    def test_build_command_basic(self, tmp_path):
+        from bactowise.runners.mefinder_runner import MobileElementFinderRunner
+        runner = MobileElementFinderRunner(
+            self._make_tool_config(), tmp_path, global_threads=4
+        )
+        fasta         = tmp_path / "genome.fasta"
+        output_prefix = tmp_path / "mefinder_output"
+        fasta.touch()
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta, output_prefix)
+        assert "find" in cmd
+        assert "-c" in cmd
+        assert str(fasta.resolve()) in cmd
+        assert "-t" in cmd
+        assert "-g" in cmd
+        assert str(output_prefix) in cmd
+
+    def test_conda_run_cmd_uses_mefinder_binary(self, tmp_path):
+        from bactowise.runners.mefinder_runner import MobileElementFinderRunner
+        runner = MobileElementFinderRunner(self._make_tool_config(), tmp_path)
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._conda_run_cmd(["find", "--version"])
+        assert "mefinder" in cmd
+        assert "mefinder_env" in cmd
+
+    def test_mefinder_in_stage_4(self, tmp_path):
+        config = PipelineConfig(**{
+            "tools": [
+                {"name": "checkm",    "version": "1.2.3",               "runtime": "conda", "role": "qc"},
+                {"name": "prokka",    "version": "1.14.6",              "runtime": "conda", "depends_on": ["checkm"]},
+                {"name": "bakta",     "version": "1.9.3",               "runtime": "docker",
+                 "image": "oschwengers/bakta:1.9.3",                     "depends_on": ["checkm"]},
+                {"name": "pgap",      "version": "2024-07-18.build7555", "runtime": "pgap",  "depends_on": ["checkm"]},
+                {"name": "consensus", "version": "1.0.0",               "runtime": "conda",
+                 "depends_on": ["bakta", "prokka", "pgap"],
+                 "conda_env": {"name": "consensus_env", "dependencies": ["pandas"]}},
+                {"name": "mefinder",  "version": "latest",              "runtime": "conda",
+                 "depends_on": ["consensus"],
+                 "conda_env": {"name": "mefinder_env", "dependencies": []}},
+            ],
+            "output_dir": str(tmp_path),
+        })
+        with patch("docker.from_env") as mock_docker:
+            mock_docker.return_value.ping.return_value = True
+            pipeline = Pipeline(config)
+        stages = pipeline._build_stages()
+        assert stages[3] == ["mefinder"]

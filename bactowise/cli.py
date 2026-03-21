@@ -17,13 +17,16 @@ from bactowise.utils.db_manager import (
     DEFAULT_DB_ROOT,
     _DEFAULT_PGAP_DATA_DIR,
     _PHIGARO_DB_DIR,
+    _PLATON_DB_DIR,
     download_bakta,
     download_checkm,
     download_pgap,
+    download_platon,
     is_bakta_present,
     is_checkm_present,
     is_pgap_present,
     is_phigaro_present,
+    is_platon_present,
 )
 
 app = typer.Typer(
@@ -47,35 +50,39 @@ def db_download(
     checkm: bool = typer.Option(False, "--checkm", help="CheckM only."),
     bakta:  bool = typer.Option(False, "--bakta",  help="Bakta only."),
     pgap:   bool = typer.Option(False, "--pgap",   help="PGAP only (~30 GB)."),
+    platon: bool = typer.Option(False, "--platon",  help="Platon only (~1.6 GB)."),
     force:  bool = typer.Option(
         False, "--force-db-download",
         help="Re-download even if already present.",
     ),
 ):
-    """Download all required databases, one-time (~32 GB total).
+    """Download all required databases, one-time (~36 GB total).
 
     \b
     Stores all databases under ~/.bactowise/databases/:
       checkm/      — CheckM marker gene database (~2 GB)
       bakta/       — Bakta annotation database, light build (~2 GB)
       pgap/        — PGAP supplemental data (~30 GB)
+      platon/      — Platon plasmid database (~2.8 GB)
 
     \b
     Use individual flags to download only specific databases:
       bactowise db download --checkm
       bactowise db download --bakta
       bactowise db download --pgap
+      bactowise db download --platon
 
     \b
     Examples:
       bactowise db download
       bactowise db download --pgap --force-db-download
-      bactowise db download --checkm --force-db-download
+      bactowise db download --platon --force-db-download
     """
-    any_specified = checkm or bakta or pgap
+    any_specified = checkm or bakta or pgap or platon
     download_checkm_flag = checkm or not any_specified
     download_bakta_flag  = bakta  or not any_specified
     download_pgap_flag   = pgap   or not any_specified
+    download_platon_flag = platon or not any_specified
 
     typer.echo(f"\nBactoWise — Database Download")
     typer.echo(f"  Storage : {DEFAULT_DB_ROOT}")
@@ -104,6 +111,13 @@ def db_download(
             typer.echo(f"\n✗ PGAP: {e}", err=True)
             errors.append("pgap")
 
+    if download_platon_flag:
+        try:
+            download_platon(force=force)
+        except RuntimeError as e:
+            typer.echo(f"\n✗ Platon: {e}", err=True)
+            errors.append("platon")
+
     if errors:
         typer.echo(f"\n✗ Failed: {', '.join(errors)}\n", err=True)
         raise typer.Exit(code=1)
@@ -127,6 +141,7 @@ def db_status():
     bakta_ok   = is_bakta_present()
     pgap_ok    = is_pgap_present()
     phigaro_ok = is_phigaro_present()
+    platon_ok  = is_platon_present()
 
     console.print()
     console.print("  [bold white]Stage 1 — QC[/bold white]")
@@ -153,13 +168,20 @@ def db_status():
         f"  Phigaro       → [muted]{_PHIGARO_DB_DIR}[/muted]"
     )
     console.print(
-        f"    [muted]~  AMRFinderPlus → database is downloaded automatically by "
-        f"amrfinder -u into the amrfinderplus_env conda environment "
-        f"and is not tracked here[/muted]"
+        f"    {'[success]✓[/success]' if platon_ok else '[error]✗[/error]'}"
+        f"  Platon        → [muted]{_PLATON_DB_DIR}[/muted]"
+    )
+    console.print(
+        f"    [muted]~  AMRFinderPlus → database managed inside amrfinderplus_env "
+        f"(downloaded automatically by amrfinder -u, not tracked here)[/muted]"
+    )
+    console.print(
+        f"    [muted]~  MEFinder      → database bundled with pip install "
+        f"inside mefinder_env, not tracked here[/muted]"
     )
 
     all_core_ok   = checkm_ok and bakta_ok and pgap_ok
-    all_stage4_ok = phigaro_ok
+    all_stage4_ok = phigaro_ok and platon_ok
 
     console.print()
     if not all_core_ok:

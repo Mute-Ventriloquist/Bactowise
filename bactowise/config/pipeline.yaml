@@ -122,6 +122,48 @@ tools:
     params:
       # threads: 4   # defaults to global threads
 
+  # Platon — plasmid contig classification and characterization.
+  # Identifies plasmid-borne contigs from the genome FASTA using replicon
+  # distribution scores (RDS) and comprehensive contig characterization.
+  # Database (~2.8 GB) downloaded automatically to ~/.bactowise/databases/platon/db/
+  # Optional params:
+  #   mode    : sensitivity | accuracy | specificity  (default: accuracy)
+  #   threads : override global thread count
+
+  - name: platon
+    version: "latest"
+    runtime: conda
+    depends_on: [consensus]
+    conda_env:
+      name: "platon_env"
+      channels:
+        - conda-forge
+        - bioconda
+        - defaults
+      dependencies: []
+    params:
+      mode: accuracy
+      # threads: 4   # defaults to global threads
+
+  # MobileElementFinder — transposon, IS element, and integron detection.
+  # Identifies mobile genetic elements by aligning contigs against a curated
+  # MGE reference database bundled with the pip package.
+  # Dependencies: blast and kma installed via conda; MobileElementFinder via pip.
+
+  - name: mefinder
+    version: "latest"
+    runtime: conda
+    depends_on: [consensus]
+    conda_env:
+      name: "mefinder_env"
+      channels:
+        - conda-forge
+        - bioconda
+        - defaults
+      dependencies: []
+    params:
+      # threads: 4   # defaults to global threads
+
   # AMRFinderPlus — antimicrobial resistance genes and point mutations.
   # Runs in nucleotide-only mode: amrfinder -n <genome.fasta> --plus
   #
