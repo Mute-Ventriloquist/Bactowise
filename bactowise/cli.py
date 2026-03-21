@@ -123,12 +123,10 @@ def db_status():
     console.print(f"\n[bold]BactoWise — Database Status[/bold]")
     console.print(f"  [muted]Default location: {DEFAULT_DB_ROOT}[/muted]")
 
-    checkm_ok = is_checkm_present()
-    bakta_ok  = is_bakta_present()
-    pgap_ok   = is_pgap_present()
-    phigaro_ok    = is_phigaro_present()
-    amrfinder_ok  = is_amrfinderplus_db_present()
-    amrfinder_path = amrfinderplus_db_path()
+    checkm_ok  = is_checkm_present()
+    bakta_ok   = is_bakta_present()
+    pgap_ok    = is_pgap_present()
+    phigaro_ok = is_phigaro_present()
 
     console.print()
     console.print("  [bold white]Stage 1 — QC[/bold white]")
