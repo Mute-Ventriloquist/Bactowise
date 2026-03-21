@@ -102,11 +102,15 @@ class AMRFinderPlusRunner(CondaToolRunner):
 
         conda_bin = self._find_conda_binary()
 
-        # Install ncbi-amrfinderplus (not 'amrfinderplus') plus any extras
-        packages = [f"{self.CONDA_PACKAGE}={self.config.version}"]
+        # Install ncbi-amrfinderplus without a version pin.
+        # --strict-channel-priority is required to prevent conda mixing
+        # conda-forge and bioconda builds of libcurl/libnghttp2, which causes
+        # an unsatisfiable dependency conflict on pinned versions.
+        # Channel order must be conda-forge first, then bioconda (per NCBI docs).
+        packages = [self.CONDA_PACKAGE]
         packages += env_config.dependencies
 
-        cmd = [conda_bin, "create", "-n", env_name, "-y"]
+        cmd = [conda_bin, "create", "-n", env_name, "-y", "--strict-channel-priority"]
         for channel in env_config.channels:
             cmd += ["-c", channel]
         cmd += packages

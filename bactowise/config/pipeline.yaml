@@ -114,14 +114,14 @@ tools:
   #   threads  : override global thread count for this tool
 
   - name: amrfinderplus
-    version: "4.0.23"
+    version: "latest"
     runtime: conda
     depends_on: [consensus]
     conda_env:
       name: "amrfinderplus_env"
       channels:
-        - bioconda
         - conda-forge
+        - bioconda
         - defaults
       dependencies: []
     params:

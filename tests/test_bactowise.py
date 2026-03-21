@@ -918,7 +918,7 @@ class TestAMRFinderPlusRunner:
         params.update(extra_params)
         return ToolConfig(
             name="amrfinderplus",
-            version="4.0.23",
+            version="latest",
             runtime="conda",
             depends_on=["consensus"],
             conda_env={"name": "amrfinderplus_env", "dependencies": []},
@@ -1003,7 +1003,7 @@ class TestAMRFinderPlusRunner:
                 {"name": "consensus",     "version": "1.0.0",               "runtime": "conda",
                  "depends_on": ["bakta", "prokka", "pgap"],
                  "conda_env": {"name": "consensus_env", "dependencies": ["pandas"]}},
-                {"name": "amrfinderplus", "version": "4.0.23",              "runtime": "conda",
+                {"name": "amrfinderplus", "version": "latest",              "runtime": "conda",
                  "depends_on": ["consensus"],
                  "conda_env": {"name": "amrfinderplus_env", "dependencies": []}},
             ],
@@ -1027,7 +1027,7 @@ class TestAMRFinderPlusRunner:
                 {"name": "consensus",     "version": "1.0.0",              "runtime": "conda",
                  "depends_on": ["bakta", "prokka", "pgap"],
                  "conda_env": {"name": "consensus_env", "dependencies": ["pandas"]}},
-                {"name": "amrfinderplus", "version": "4.0.23",             "runtime": "conda",
+                {"name": "amrfinderplus", "version": "latest",             "runtime": "conda",
                  "depends_on": ["consensus"],
                  "conda_env": {"name": "amrfinderplus_env", "dependencies": []}},
             ],
