@@ -124,12 +124,13 @@ class PhigaroRunner(CondaToolRunner):
 
     def _ensure_phigaro_setup(self) -> None:
         """
-        Run `phigaro-setup --auto --config-path <managed_path>` if the
-        Phigaro config/database is not yet present at the managed location.
+        Run phigaro-setup if the Phigaro database is not yet present.
 
-        phigaro-setup downloads the pVOG HMM profiles and writes config.yml
-        to the path specified by --config-path. BactoWise redirects this to
-        ~/.bactowise/databases/phigaro/ so all databases are co-located.
+        Correct flags (from phigaro-setup --help):
+            -c CONFIG   path for the config file
+            -p PVOG     directory to store pVOG HMM profiles
+            -f          force / non-interactive (no prompts)
+            --no-updatedb  skip sudo updatedb (required for non-root users)
         """
         if is_phigaro_present():
             console.print(
@@ -139,16 +140,23 @@ class PhigaroRunner(CondaToolRunner):
             return
 
         _PHIGARO_DB_DIR.mkdir(parents=True, exist_ok=True)
+        pvog_dir    = _PHIGARO_DB_DIR / "pvog"
+        config_file = _PHIGARO_DB_DIR / "config.yml"
 
         console.print(
             "  Phigaro database not found. Running phigaro-setup "
-            "(this is a one-time step)..."
+            "(this is a one-time step, ~1.5 GB download)..."
         )
 
         result = subprocess.run(
             self._conda_run_cmd_for(
                 "phigaro-setup",
-                ["--auto", "--config-path", str(_PHIGARO_DB_DIR / "config.yml")],
+                [
+                    "-c", str(config_file),
+                    "-p", str(pvog_dir),
+                    "-f",
+                    "--no-updatedb",
+                ],
             ),
             text=True,
         )
@@ -157,8 +165,8 @@ class PhigaroRunner(CondaToolRunner):
             raise RuntimeError(
                 f"  ✗  phigaro-setup failed.\n"
                 f"     Try running manually:\n"
-                f"       conda run -n phigaro_env phigaro-setup --auto "
-                f"--config-path {_PHIGARO_DB_DIR / 'config.yml'}"
+                f"       conda run -n phigaro_env phigaro-setup "
+                f"-c {config_file} -p {pvog_dir} -f --no-updatedb"
             )
 
         console.print(
@@ -223,7 +231,7 @@ class PhigaroRunner(CondaToolRunner):
             "-o", str(output_prefix),
             "-e", "tsv", "gff",
             "--not-open",
-            "--config-path", str(_PHIGARO_DB_DIR / "config.yml"),
+            "-c", str(_PHIGARO_DB_DIR / "config.yml"),
             "-t", str(threads),
         ]
 
