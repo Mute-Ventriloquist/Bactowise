@@ -121,7 +121,7 @@ class SPIFinderRunner(CondaToolRunner):
         console.print(f"    This is a one-time step and may take a few minutes.\n")
 
         conda_bin  = self._find_conda_binary()
-        conda_deps = ["python", "blast", "git"] + [
+        conda_deps = ["python=3.11", "blast", "git"] + [
             d for d in env_config.dependencies
             if d not in self._PIP_DEPS
         ]

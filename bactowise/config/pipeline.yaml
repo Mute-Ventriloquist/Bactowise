@@ -235,7 +235,8 @@ tools:
         - conda-forge
         - bioconda
         - defaults
-      dependencies: []
+      dependencies:
+        - python=3.11   # distutils was removed in 3.12; spifinder.py requires it
     params:
       min_cov: 0.60
       threshold: 0.95
