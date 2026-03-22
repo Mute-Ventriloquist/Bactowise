@@ -167,11 +167,92 @@ class Pipeline:
         console.print("[success]✓ All preflight checks passed. Starting pipeline...[/success]")
         console.print()
 
+    def _print_resource_warning(self) -> None:
+        """
+        Print a storage and compute requirements warning before anything runs,
+        and pause for 5 seconds so the user can cancel if needed (Ctrl+C).
+
+        Only shown when databases have not all been downloaded yet — experienced
+        users with everything in place see a brief confirmation instead.
+        """
+        import time
+        from bactowise.utils.db_manager import (
+            is_checkm_present, is_bakta_present, is_pgap_present,
+            is_phigaro_present, is_platon_present, is_eggnog_present,
+        )
+
+        tool_names = {t.name for t in self.config.tools} - self.skip
+        needs_checkm = "checkm"       in tool_names
+        needs_bakta  = "bakta"        in tool_names
+        needs_pgap   = "pgap"         in tool_names
+        needs_phigaro = "phigaro"     in tool_names
+        needs_platon  = "platon"      in tool_names
+        needs_eggnog  = "eggnogmapper" in tool_names
+
+        missing = []
+        if needs_checkm  and not is_checkm_present():  missing.append("CheckM (~1.4 GB)")
+        if needs_bakta   and not is_bakta_present():   missing.append("Bakta (~4 GB)")
+        if needs_pgap    and not is_pgap_present():    missing.append("PGAP (~38 GB)")
+        if needs_phigaro and not is_phigaro_present(): missing.append("Phigaro pVOG profiles (~1.6 GB)")
+        if needs_platon  and not is_platon_present():  missing.append("Platon (~2.8 GB)")
+        if needs_eggnog  and not is_eggnog_present():  missing.append("EggNOG (~48 GB)")
+
+        console.rule("[bold white]  BactoWise — Resource Requirements  [/bold white]", style="yellow")
+        console.print()
+
+        if missing:
+            console.print(
+                "  [warning]⚠  One-time database downloads required[/warning]\n"
+                f"     The following databases will be downloaded on this run:"
+            )
+            for db in missing:
+                console.print(f"       • {db}")
+            console.print()
+
+        console.print(
+            "  [label]Disk space:[/label]  ~160 GB total required\n"
+            "    [muted]• ~96 GB for all databases (CheckM 1.4 GB · Bakta 4 GB · PGAP 38 GB ·[/muted]\n"
+            "    [muted]  Phigaro 1.6 GB · Platon 2.8 GB · EggNOG 48 GB)[/muted]\n"
+            "    [muted]• ~60 GB additional working space during a PGAP run[/muted]\n"
+            "    [muted]  (NCBI quotes ~100 GB total for PGAP data + working space combined)[/muted]\n"
+            "    [muted]• Ensure your filesystem has sufficient free space before continuing.[/muted]"
+        )
+        console.print()
+        console.print(
+            "  [label]Compute:[/label]    Multi-core CPU recommended\n"
+            "    [muted]• Stage 2 tools (Prokka, Bakta, PGAP) run in parallel — expect 30–90 min[/muted]\n"
+            "    [muted]  on a 4-core machine for a typical bacterial genome.[/muted]\n"
+            "    [muted]• PGAP is the most resource-intensive step and may take 1–3 hours[/muted]\n"
+            "    [muted]  depending on genome size and available CPUs.[/muted]\n"
+            "    [muted]• Stage 4 tools run in parallel — EggNOG-mapper may take 10–30 min[/muted]\n"
+            "    [muted]  depending on genome size and the number of consensus genes.[/muted]"
+        )
+        console.print()
+        console.print(
+            "  [muted]Press Ctrl+C within 5 seconds to cancel.[/muted]"
+        )
+        console.print()
+
+        try:
+            for remaining in range(5, 0, -1):
+                console.print(
+                    f"\r  [muted]Starting in {remaining}s...[/muted]",
+                    end="", soft_wrap=True,
+                )
+                time.sleep(1)
+            console.print()
+            console.print()
+        except KeyboardInterrupt:
+            console.print()
+            console.print("\n  [warning]Run cancelled by user.[/warning]\n")
+            raise SystemExit(0)
+
     def run(self, fasta: Path) -> dict[str, Path]:
         fasta = fasta.resolve()
         if not fasta.exists():
             raise FileNotFoundError(f"Input fasta not found: {fasta}")
 
+        self._print_resource_warning()
         self.preflight()
 
         stages = self._build_stages()

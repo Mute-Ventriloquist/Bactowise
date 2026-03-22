@@ -79,9 +79,10 @@ PGAP (required), and also improves labelling in Prokka and Bakta.
 On first run, BactoWise automatically sets up everything it needs — conda
 environments, container images, and all required databases. Just run it.
 
-> **Storage requirements:** The full pipeline downloads ~56 GB of databases
-> on first run (~2 GB CheckM, ~2 GB Bakta, ~30 GB PGAP, ~1.6 GB Platon,
-> ~20 GB EggNOG). During a run, PGAP requires up to ~100 GB of working space.
+> **Storage requirements:** The full pipeline requires ~160 GB of total disk space:
+> ~96 GB for all databases (CheckM 1.4 GB, Bakta 4 GB, PGAP 38 GB, Phigaro 1.6 GB,
+> Platon 2.8 GB, EggNOG 48 GB) plus ~60 GB working space during a PGAP run
+> (NCBI quotes ~100 GB total for PGAP data and working space combined).
 > Databases can be pre-downloaded with `bactowise db download` — see the
 > [User Guide](DOCS.md#2-databases) for details. Large downloads (PGAP, EggNOG)
 > support automatic resume if the connection drops.

@@ -52,23 +52,23 @@ app.add_typer(db_app, name="db")
 def db_download(
     checkm: bool = typer.Option(False, "--checkm", help="CheckM only."),
     bakta:  bool = typer.Option(False, "--bakta",  help="Bakta only."),
-    pgap:   bool = typer.Option(False, "--pgap",   help="PGAP only (~30 GB)."),
-    platon: bool = typer.Option(False, "--platon",  help="Platon only (~1.6 GB)."),
-    eggnog: bool = typer.Option(False, "--eggnog",  help="EggNOG only (~20 GB)."),
+    pgap:   bool = typer.Option(False, "--pgap",   help="PGAP only (~38 GB)."),
+    platon: bool = typer.Option(False, "--platon",  help="Platon only (~2.8 GB)."),
+    eggnog: bool = typer.Option(False, "--eggnog",  help="EggNOG only (~48 GB)."),
     force:  bool = typer.Option(
         False, "--force-db-download",
         help="Re-download even if already present.",
     ),
 ):
-    """Download all required databases, one-time (~56 GB total).
+    """Download all required databases, one-time (~96 GB total on disk).
 
     \b
     Stores all databases under ~/.bactowise/databases/:
-      checkm/      — CheckM marker gene database (~2 GB)
-      bakta/       — Bakta annotation database, light build (~2 GB)
-      pgap/        — PGAP supplemental data (~30 GB)
+      checkm/      — CheckM marker gene database (~1.4 GB)
+      bakta/       — Bakta annotation database, light build (~4 GB)
+      pgap/        — PGAP supplemental data (~38 GB; ~100 GB total with working space)
       platon/      — Platon plasmid database (~2.8 GB)
-      eggnog/      — EggNOG-mapper database (~20 GB)
+      eggnog/      — EggNOG-mapper database (~48 GB)
 
     \b
     Use individual flags to download only specific databases:

@@ -83,52 +83,66 @@ BactoWise stores all managed databases under `~/.bactowise/databases/` and
 tracks them through the `bactowise db` command. The default configuration
 already points to these paths — no manual edits needed.
 
-### Stages 1–2 databases (~34 GB)
+> **Total disk space required: ~160 GB**
+> ~96 GB for all databases combined, plus ~60 GB working space during a PGAP run
+> (NCBI documents ~100 GB total for PGAP supplemental data and working space combined).
+> Ensure your filesystem has sufficient free space before starting.
 
-**CheckM + Bakta (~4 GB combined):**
+### Stages 1–2 databases (~43 GB)
+
+**CheckM (~1.4 GB):**
+```bash
+bactowise db download --checkm
+```
+Downloaded to `~/.bactowise/databases/checkm/`.
+
+**Bakta (~4 GB):**
+```bash
+bactowise db download --bakta
+```
+Downloaded to `~/.bactowise/databases/bakta/db-light/`.
+The Bakta Singularity image (~500 MB) is pulled automatically during preflight — no separate step needed.
+
+**Both CheckM and Bakta together:**
 ```bash
 bactowise db download
 ```
 
-Downloads:
-- CheckM marker gene database (~2 GB) → `~/.bactowise/databases/checkm/`
-- Bakta annotation database, light build (~2 GB) → `~/.bactowise/databases/bakta/db-light/`
-
-The Bakta Singularity image (~500 MB) is pulled automatically during preflight — no separate step needed.
-
-**PGAP supplemental data (~30 GB):**
+**PGAP supplemental data (~38 GB):**
 ```bash
 bactowise db download --pgap
 ```
-
-PGAP is part of every standard `bactowise run`. Because of its size it must be
+Downloaded to `~/.bactowise/databases/pgap/`. Because of its size it must be
 requested separately. This command also downloads `pgap.py` to
 `~/.bactowise/bin/pgap.py` automatically.
 
-> **Disk space:** Plan for ~30 GB for PGAP data plus ~100 GB working space during a PGAP run.
+> **Disk space:** NCBI documents ~100 GB total for PGAP supplemental data and
+> working space combined. With 38 GB already on disk as the database, plan for
+> ~60 GB additional working space during a PGAP run.
 
-### Stage 4 databases (~23 GB combined)
+### Stage 4 databases (~54 GB combined)
 
 Stage 4 databases are downloaded automatically on first run if not already
-present. Because of their size, pre-downloading is recommended:
+present. Because of their size, pre-downloading is strongly recommended:
 
-**Platon plasmid database (~1.6 GB download, ~2.8 GB on disk):**
+**Platon plasmid database (~2.8 GB):**
 ```bash
 bactowise db download --platon
 ```
-Stored at `~/.bactowise/databases/platon/db/`. Required by Platon for plasmid
-contig classification. Downloaded directly from Zenodo.
+Stored at `~/.bactowise/databases/platon/db/`. Downloaded from Zenodo.
 
-**EggNOG-mapper database (~20 GB):**
+**EggNOG-mapper database (~48 GB):**
 ```bash
 bactowise db download --eggnog
 ```
-Stored at `~/.bactowise/databases/eggnog/`. Includes `eggnog.db` (~15 GB
+Stored at `~/.bactowise/databases/eggnog/`. Includes `eggnog.db` (~43 GB
 SQLite annotation database) and `eggnog_proteins.dmnd` (~4 GB DIAMOND search
 database). Downloads support automatic resume — if the connection drops,
-re-running the same command picks up from where it left off.
+re-running the same command picks up from the last completed byte.
+This database is substantially larger than the published documentation suggests;
+plan accordingly.
 
-**Phigaro pVOG profiles (~1.5 GB):**
+**Phigaro pVOG profiles (~1.6 GB):**
 Stored at `~/.bactowise/databases/phigaro/`. Downloaded automatically by
 `phigaro-setup` during preflight. No separate download command is needed.
 
@@ -166,16 +180,16 @@ Output groups databases by pipeline stage:
 
 ```
 Stage 1 — QC
-  ✓  CheckM   → ~/.bactowise/databases/checkm
+  ✓  CheckM   → ~/.bactowise/databases/checkm            (~1.4 GB)
 
 Stage 2 — Annotation
-  ✓  Bakta    → ~/.bactowise/databases/bakta/db-light
-  ✓  PGAP     → ~/.bactowise/databases/pgap
+  ✓  Bakta    → ~/.bactowise/databases/bakta/db-light    (~4 GB)
+  ✓  PGAP     → ~/.bactowise/databases/pgap              (~38 GB)
 
 Stage 4 — Supplementary
-  ✓  Phigaro       → ~/.bactowise/databases/phigaro
-  ✓  Platon        → ~/.bactowise/databases/platon/db
-  ✓  EggNOG        → ~/.bactowise/databases/eggnog
+  ✓  Phigaro       → ~/.bactowise/databases/phigaro      (~1.6 GB)
+  ✓  Platon        → ~/.bactowise/databases/platon/db    (~2.8 GB)
+  ✓  EggNOG        → ~/.bactowise/databases/eggnog       (~48 GB)
   ~  AMRFinderPlus → database managed inside amrfinderplus_env (not tracked here)
   ~  MEFinder      → database bundled with pip install inside mefinder_env (not tracked here)
 ```
