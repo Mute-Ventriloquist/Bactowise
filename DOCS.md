@@ -9,6 +9,11 @@
   - [6. Understanding QC output](#6-understanding-qc-output)
   - [7. Stage 3 — BactoWise Consensus Engine](#7-stage-3--bactowise-consensus-engine)
   - [8. Stage 4 — Supplementary Annotations](#8-stage-4--supplementary-annotations)
+    - [AMRFinderPlus](#amrfinderplus--antimicrobial-resistance-genes-and-point-mutations)
+    - [Phigaro](#phigaro--prophage-region-detection)
+    - [Platon](#platon--plasmid-contig-classification-and-characterisation)
+    - [MEFinder](#mefinder-mobileelemenfinder--transposon-and-is-element-detection)
+    - [EggNOG-mapper](#eggnog-mapper--go-terms-kegg-pathways-and-cog-annotation)
   - [9. Downstream analysis — pangenome with Panaroo](#9-downstream-analysis--pangenome-with-panaroo)
   - [10. Troubleshooting](#10-troubleshooting)
 - [Developer Guide](#developer-guide)
@@ -74,15 +79,11 @@ conda mambabuild --suppress-variables -c conda-forge -c bioconda conda_recipe/
 
 ## 2. Databases
 
-BactoWise stores all databases under `~/.bactowise/databases/` and manages
-them through the `bactowise db` command. The default configuration already
-points to these paths — no manual edits needed.
+BactoWise stores all managed databases under `~/.bactowise/databases/` and
+tracks them through the `bactowise db` command. The default configuration
+already points to these paths — no manual edits needed.
 
-### Required databases
-
-BactoWise runs three annotation tools by default — Prokka, Bakta, and PGAP.
-All three require their databases to be present before `bactowise run` can
-proceed. A missing database for any active tool is flagged as an error.
+### Stages 1–2 databases (~34 GB)
 
 **CheckM + Bakta (~4 GB combined):**
 ```bash
@@ -93,25 +94,49 @@ Downloads:
 - CheckM marker gene database (~2 GB) → `~/.bactowise/databases/checkm/`
 - Bakta annotation database, light build (~2 GB) → `~/.bactowise/databases/bakta/db-light/`
 
-The Bakta Singularity image (~500 MB) is pulled automatically during preflight
-on first run — no separate step needed.
+The Bakta Singularity image (~500 MB) is pulled automatically during preflight — no separate step needed.
 
 **PGAP supplemental data (~30 GB):**
 ```bash
 bactowise db download --pgap
 ```
 
-PGAP is part of every standard `bactowise run`. Its supplemental data must be
-downloaded before the first run. Because of its size it is not bundled with
-the core download — you must request it with `--pgap`. This command also
-downloads `pgap.py` to `~/.bactowise/bin/pgap.py` automatically.
+PGAP is part of every standard `bactowise run`. Because of its size it must be
+requested separately. This command also downloads `pgap.py` to
+`~/.bactowise/bin/pgap.py` automatically.
 
-> **Disk space:** Plan for ~30 GB of storage for the PGAP data, plus ~100 GB
-> of total working space when a PGAP job is running. The download itself
-> takes significant time depending on your network.
+> **Disk space:** Plan for ~30 GB for PGAP data plus ~100 GB working space during a PGAP run.
 
-If you want to run BactoWise without PGAP, use `--skip pgap` at runtime
-rather than omitting the database download.
+### Stage 4 databases (~23 GB combined)
+
+Stage 4 databases are downloaded automatically on first run if not already
+present. Because of their size, pre-downloading is recommended:
+
+**Platon plasmid database (~1.6 GB download, ~2.8 GB on disk):**
+```bash
+bactowise db download --platon
+```
+Stored at `~/.bactowise/databases/platon/db/`. Required by Platon for plasmid
+contig classification. Downloaded directly from Zenodo.
+
+**EggNOG-mapper database (~20 GB):**
+```bash
+bactowise db download --eggnog
+```
+Stored at `~/.bactowise/databases/eggnog/`. Includes `eggnog.db` (~15 GB
+SQLite annotation database) and `eggnog_proteins.dmnd` (~4 GB DIAMOND search
+database). Downloads support automatic resume — if the connection drops,
+re-running the same command picks up from where it left off.
+
+**Phigaro pVOG profiles (~1.5 GB):**
+Stored at `~/.bactowise/databases/phigaro/`. Downloaded automatically by
+`phigaro-setup` during preflight. No separate download command is needed.
+
+**AMRFinderPlus and MEFinder databases:**
+Both are self-managed inside their respective conda environments and are not
+tracked in `~/.bactowise/databases/`:
+- AMRFinderPlus: downloaded by `amrfinder -u` into `amrfinderplus_env` during preflight
+- MEFinder: bundled with the pip package inside `mefinder_env`
 
 ### Download individual databases
 
@@ -119,14 +144,16 @@ rather than omitting the database download.
 bactowise db download --checkm   # CheckM only
 bactowise db download --bakta    # Bakta only
 bactowise db download --pgap     # PGAP only (~30 GB)
+bactowise db download --platon   # Platon only (~1.6 GB)
+bactowise db download --eggnog   # EggNOG only (~20 GB)
 ```
 
 ### Force re-download
 
 ```bash
-bactowise db download --force-db-download           # CheckM + Bakta
-bactowise db download --checkm --force-db-download  # CheckM only
-bactowise db download --pgap --force-db-download    # PGAP only
+bactowise db download --force-db-download             # all managed databases
+bactowise db download --eggnog --force-db-download    # EggNOG only
+bactowise db download --platon --force-db-download    # Platon only
 ```
 
 ### Check database status
@@ -135,23 +162,30 @@ bactowise db download --pgap --force-db-download    # PGAP only
 bactowise db status
 ```
 
-This shows the status of all databases at their default locations:
+Output groups databases by pipeline stage:
 
 ```
-✓  CheckM  → ~/.bactowise/databases/checkm
-✓  Bakta   → ~/.bactowise/databases/bakta/db-light
-✓  PGAP    → ~/.bactowise/databases/pgap
-```
+Stage 1 — QC
+  ✓  CheckM   → ~/.bactowise/databases/checkm
 
-A missing database for any active tool is flagged as an error at preflight.
+Stage 2 — Annotation
+  ✓  Bakta    → ~/.bactowise/databases/bakta/db-light
+  ✓  PGAP     → ~/.bactowise/databases/pgap
+
+Stage 4 — Supplementary
+  ✓  Phigaro       → ~/.bactowise/databases/phigaro
+  ✓  Platon        → ~/.bactowise/databases/platon/db
+  ✓  EggNOG        → ~/.bactowise/databases/eggnog
+  ~  AMRFinderPlus → database managed inside amrfinderplus_env (not tracked here)
+  ~  MEFinder      → database bundled with pip install inside mefinder_env (not tracked here)
+```
 
 ### Interrupted downloads
 
-If a download is interrupted, just re-run the same command. BactoWise checks
-for key marker files inside each database directory rather than just checking
-whether the directory exists, so partial downloads are detected and re-run
-automatically. For PGAP, the marker is a versioned `input-VERSION.BUILD/`
-subdirectory written by pgap.py on successful completion.
+BactoWise checks for key marker files inside each database directory — partial
+downloads are detected and re-run automatically rather than silently skipping.
+For large databases (EggNOG, PGAP), BactoWise uses HTTP range requests so
+interrupted downloads resume from the last completed byte rather than restarting.
 
 ---
 
@@ -245,37 +279,55 @@ output directory or one specified with `-o`:
 │   ├── *.gbff
 │   └── logs/
 │       └── bakta.log
-├── pgap/                    ← only present when PGAP is active
+├── pgap/
 │   ├── run_<timestamp>/     ← pgap.py creates a timestamped output directory
 │   │   ├── annot.gff
 │   │   ├── annot.gbk
 │   │   └── cwltool.log      ← detailed pgap.py execution log
 │   └── logs/
 │       └── pgap.log
-└── consensus/               ← Stage 3: BactoWise Consensus Engine
-    ├── stage3_input/        ← staging folder (kept for debugging)
-    │   ├── bakta_annotation.gff3
-    │   ├── prokka_annotation.gff
-    │   ├── pgap_annotation.gff
-    │   └── <genome>.fasta
-    ├── Master_Table_Annotation.xlsx
-    ├── <prefix>.gff3
-    ├── <prefix>.gbk
-    ├── <prefix>.faa
-    ├── <prefix>.fna
-    ├── summary_report.txt
-    ├── pipeline.log
+├── consensus/               ← Stage 3: BactoWise Consensus Engine
+│   ├── stage3_input/        ← staging folder (kept for debugging)
+│   │   ├── bakta_annotation.gff3
+│   │   ├── prokka_annotation.gff
+│   │   ├── pgap_annotation.gff
+│   │   └── <genome>.fasta
+│   ├── Master_Table_Annotation.xlsx
+│   ├── GENE.gff3
+│   ├── GENE.gbk
+│   ├── GENE.faa             ← used by EggNOG-mapper in stage 4
+│   ├── GENE.fna
+│   ├── summary_report.txt
+│   ├── pipeline.log
+│   └── logs/
+│       └── consensus.log
+├── amrfinderplus/           ← Stage 4 (present unless --skip stage_4)
+│   ├── amrfinderplus_results.tsv
+│   └── logs/
+│       └── amrfinderplus.log
+├── phigaro/                 ← Stage 4
+│   ├── phigaro_output.phg.tsv
+│   ├── phigaro_output.phg.gff
+│   └── logs/
+│       └── phigaro.log
+├── platon/                  ← Stage 4
+│   ├── platon_output.tsv         ← plasmid contig summary
+│   ├── platon_output.json        ← comprehensive per-contig results
+│   ├── platon_output_plasmid.fasta
+│   ├── platon_output_chromosome.fasta
+│   └── logs/
+│       └── platon.log
+├── mefinder/                ← Stage 4
+│   ├── mefinder_output.csv       ← MGE predictions with quality metrics
+│   ├── mefinder_output.gff       ← MGE locations in GFF3 format
+│   └── logs/
+│       └── mefinder.log
+└── eggnogmapper/            ← Stage 4
+    ├── eggnog_output.emapper.annotations   ← GO / KEGG / COG per gene (TSV)
+    ├── eggnog_output.emapper.hits          ← raw DIAMOND hits
+    ├── eggnog_output.emapper.seed_orthologs
     └── logs/
-        └── consensus.log
-amrfinderplus/               ← Stage 4: supplementary (present unless --skip stage_4)
-    ├── amrfinderplus_results.tsv
-    └── logs/
-        └── amrfinderplus.log
-phigaro/                     ← Stage 4: supplementary (present unless --skip stage_4)
-    ├── phigaro_output.phg.tsv
-    ├── phigaro_output.phg.gff
-    └── logs/
-        └── phigaro.log
+        └── eggnogmapper.log
 ```
 
 ---
@@ -520,34 +572,44 @@ bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
 
 Stage 4 provides additional biological context beyond the core annotation. It
 is **skippable** with `--skip stage_4` and runs after stage 3 completes. All
-stage 4 tools depend on the consensus engine output.
+five stage 4 tools run in parallel once stage 3 finishes.
+
+```bash
+bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_4
+```
+
+---
 
 ### AMRFinderPlus — antimicrobial resistance genes and point mutations
 
-AMRFinderPlus scans the genome for acquired AMR genes, virulence factors,
-stress resistance genes, and — for supported taxa — known point mutations
-associated with resistance.
+AMRFinderPlus identifies acquired AMR genes, virulence factors, stress
+resistance genes, and — for supported taxa — known chromosomal point mutations
+associated with resistance phenotypes.
 
-**Inputs used:**
-- Genome FASTA (original `-f` input)
-- `<output_dir>/consensus/GENE.faa` — protein FASTA from stage 3
+**Input:** The original genome FASTA (`-f`). No stage 2 or stage 3 outputs
+are required.
 
-BactoWise runs AMRFinderPlus in combined nucleotide + protein mode for maximum
-sensitivity without the fragility of GFF-linked mode.
+**Database:** Downloaded automatically via `amrfinder -u` during preflight.
+Stored inside the `amrfinderplus_env` conda environment — not tracked under
+`~/.bactowise/databases/` (the tool manages its own data directory and provides
+no flag to redirect it).
 
 **Output:**
 ```
 <output_dir>/amrfinderplus/
-    amrfinderplus_results.tsv   tab-delimited AMR findings
+    amrfinderplus_results.tsv   — tab-delimited AMR findings
     logs/amrfinderplus.log
 ```
 
+The TSV reports gene name, element type (AMR / VIRULENCE / STRESS / POINT),
+contig, coordinates, strand, percent identity, percent coverage, and whether
+the finding is a core or plus element.
+
 **Configuring point mutation detection:**
 
-AMRFinderPlus supports taxon-specific point mutation screening for a subset of
-organisms. To enable it, set `organism` in `pipeline.yaml` to one of the values
-returned by `amrfinder --list_organisms`. This is separate from the `-n` organism
-name — it must match AMRFinderPlus's own taxon list exactly.
+Point mutation screening is only available for a specific set of clinically
+relevant taxa. Set `organism` in `pipeline.yaml` to a value from
+`amrfinder --list_organisms`:
 
 ```yaml
 - name: amrfinderplus
@@ -556,46 +618,178 @@ name — it must match AMRFinderPlus's own taxon list exactly.
     organism: "Escherichia"   # enables point mutation detection
 ```
 
-Supported organism values include: `Acinetobacter_baumannii`, `Campylobacter`,
+Supported values include: `Acinetobacter_baumannii`, `Campylobacter`,
 `Clostridioides_difficile`, `Enterococcus_faecalis`, `Enterococcus_faecium`,
 `Escherichia`, `Klebsiella`, `Neisseria`, `Pseudomonas_aeruginosa`,
 `Salmonella`, `Staphylococcus_aureus`, `Staphylococcus_pseudintermedius`,
 `Streptococcus_agalactiae`, `Streptococcus_pneumoniae`, `Streptococcus_pyogenes`,
 `Vibrio_cholerae`. Omit `organism` entirely if your organism is not in this list.
 
-**Database:** downloaded automatically via `amrfinder -u` during preflight.
-No manual setup required.
-
-**Skipping stage 4:**
-```bash
-bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_4
-```
+---
 
 ### Phigaro — prophage region detection
 
-Phigaro detects prophage regions embedded in bacterial genome assemblies using
-a two-step approach: Prodigal calls ORFs from the raw assembly, then pVOG HMM
-profiles annotate phage-associated genes, and a smoothing window algorithm
-identifies regions with high phage gene density.
+Phigaro identifies prophage regions embedded in bacterial genome assemblies.
+It calls ORFs with Prodigal, annotates phage-associated genes against pVOG HMM
+profiles, then applies a smoothing window to flag contiguous regions with high
+phage gene density.
 
-**Input used:** The original genome FASTA (`-f`) — no stage 2 or stage 3
-outputs are required. Phigaro performs its own gene calling internally.
+**Input:** The original genome FASTA (`-f`). Phigaro calls its own ORFs
+internally — no stage 2 or stage 3 outputs are required.
 
-**Setup:** `phigaro-setup` downloads the pVOG HMM database (~20 MB) to
-`~/.phigaro/` on first run. BactoWise runs this automatically during preflight
-if the config file is not yet present.
+**Database:** pVOG HMM profiles (~1.5 GB), downloaded automatically by
+`phigaro-setup` during preflight to `~/.bactowise/databases/phigaro/pvog/`.
+The config file is written to `~/.bactowise/databases/phigaro/config.yml`.
+No manual setup is required.
 
 **Output:**
 ```
 <output_dir>/phigaro/
-    phigaro_output.phg.tsv   prophage coordinates (contig, start, end)
-    phigaro_output.phg.gff   prophage regions in GFF3 format
+    phigaro_output.phg.tsv   — prophage coordinates (scaffold, start, end)
+    phigaro_output.phg.gff   — prophage regions in GFF3 format
     logs/phigaro.log
 ```
 
-**Skipping stage 4:**
+---
+
+### Platon — plasmid contig classification and characterisation
+
+Platon distinguishes plasmid-borne contigs from chromosomal DNA using replicon
+distribution scores (RDS) — a probabilistic measure of how biased a protein
+family's distribution is between chromosomes and plasmids across a reference
+database of sequenced genomes. Plasmid contigs are then characterised for
+replication systems, mobilisation genes, conjugation machinery, oriT sequences,
+and incompatibility groups.
+
+**Input:** The original genome FASTA (`-f`). Platon uses Prodigal for ORF
+calling and performs its own searches — no stage 2 or stage 3 outputs are
+required.
+
+**Database:** ~2.8 GB, downloaded automatically from Zenodo during preflight
+to `~/.bactowise/databases/platon/db/`. Can be pre-downloaded with:
 ```bash
-bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_4
+bactowise db download --platon
+```
+
+**Output:**
+```
+<output_dir>/platon/
+    platon_output.tsv              — plasmid contig summary (one row per contig)
+    platon_output.json             — comprehensive per-contig results
+    platon_output_plasmid.fasta    — sequences of plasmid-classified contigs
+    platon_output_chromosome.fasta — sequences of chromosomal contigs
+    logs/platon.log
+```
+
+The TSV summary reports contig ID, length, coverage, RDS score, circular
+status, and characterisation findings (replication genes, mobilisation genes,
+oriT, conjugation, incompatibility groups, plasmid IDs).
+
+**Configuring the classification mode:**
+
+Platon supports three sensitivity modes. The default (`accuracy`) is the
+recommended setting for most assemblies:
+
+```yaml
+- name: platon
+  params:
+    mode: accuracy        # sensitivity | accuracy | specificity
+```
+
+Use `sensitivity` for fragmented or low-coverage assemblies where some plasmid
+contigs may be small and hard to classify. Use `specificity` when minimising
+false positives is more important than recovering all plasmid contigs.
+
+---
+
+### MEFinder (MobileElementFinder) — transposon and IS element detection
+
+MEFinder identifies mobile genetic elements (MGEs) in bacterial assemblies by
+aligning contigs against the curated MGEdb reference database of known
+transposons, insertion sequences (IS), integrons, and composite transposons.
+It produces both tabular predictions and a GFF3 output for visualisation.
+
+**Input:** The original genome FASTA (`-f`). No stage 2 or stage 3 outputs
+are required.
+
+**Database:** Bundled with the MobileElementFinder pip package inside the
+`mefinder_env` conda environment (the MGEdb package). No separate download
+or database path is needed — the database is available as soon as the env is
+created.
+
+**Installation note:** MEFinder is installed via pip inside `mefinder_env`
+because it is not on bioconda. BLAST+ and KMA are installed via conda first
+to provide pre-built binaries, then `pip install MobileElementFinder` adds the
+tool and its database on top. BactoWise handles this automatically.
+
+**Output:**
+```
+<output_dir>/mefinder/
+    mefinder_output.csv   — MGE predictions with element type, coordinates,
+                            quality score, and sequence identity
+    mefinder_output.gff   — MGE locations in GFF3 format
+    logs/mefinder.log
+```
+
+The CSV reports element name, type (transposon / IS element / integron),
+contig, start, end, strand, identity, and coverage.
+
+---
+
+### EggNOG-mapper — GO terms, KEGG pathways, and COG annotation
+
+EggNOG-mapper assigns Gene Ontology (GO) terms, KEGG pathway and module
+memberships, COG functional categories, and eggNOG orthology group identifiers
+to every protein in the consensus annotation. It does this by searching proteins
+against the eggNOG DIAMOND database, identifying fine-grained orthologs in the
+eggNOG hierarchy, and transferring functional annotations from those orthologs.
+
+**Input:** `<output_dir>/consensus/GENE.faa` — the protein FASTA produced by
+the stage 3 Consensus Engine. This is the only stage 4 tool that intentionally
+uses a stage 3 output: the goal is to annotate every consensus gene identified
+across Bakta, Prokka, and PGAP with biological context, so the consensus
+protein set is the correct input.
+
+**Database:** ~20 GB total, stored at `~/.bactowise/databases/eggnog/`:
+- `eggnog.db` — main annotation SQLite database (~15 GB)
+- `eggnog_proteins.dmnd` — DIAMOND search database (~4 GB)
+- `eggnog.taxa.db` — taxonomy database
+
+Downloaded directly from `eggnog5.embl.de` with automatic resume support.
+Pre-download strongly recommended before your first full run:
+
+```bash
+bactowise db download --eggnog
+```
+
+If the download is interrupted, re-run the same command — it will resume from
+the last completed byte.
+
+**Output:**
+```
+<output_dir>/eggnogmapper/
+    eggnog_output.emapper.annotations   — per-gene functional annotations (TSV)
+    eggnog_output.emapper.hits          — raw DIAMOND hits
+    eggnog_output.emapper.seed_orthologs — seed ortholog assignments
+    logs/eggnogmapper.log
+```
+
+The annotations file has one row per gene with columns for: query (locus tag),
+seed eggNOG ortholog, evalue, score, eggNOG OGs, max annotation level, COG
+category, description, preferred name, GO terms, KEGG KO, KEGG pathway,
+KEGG module, KEGG reaction, PFAMs, and BiGG reactions.
+
+**Configuring the taxonomic scope:**
+
+By default, EggNOG-mapper restricts ortholog transfers to bacterial clades
+(`tax_scope: Bacteria`). This reduces false annotation transfers from distantly
+related eukaryotic orthologs. Override in `pipeline.yaml` if needed:
+
+```yaml
+- name: eggnogmapper
+  params:
+    tax_scope: Bacteria    # Bacteria | Archaea | Eukaryota | Viruses
+    go_evidence: all       # all | experimental | non-experimental
 ```
 
 ---
@@ -671,12 +865,20 @@ all available options.
 | `prokka not found on PATH` | BactoWise creates `prokka_env` automatically on first run — check preflight output |
 | `bactowise: command not found` | Run `conda activate <your-env>` first |
 | CheckM fails silently | Check `results/checkm/logs/checkm.log` |
-| Download interrupted | Re-run the same `bactowise db download` command — partial downloads are detected automatically |
-| `pgap.py not found` | Run `bactowise db download --pgap` — this downloads pgap.py and the supplemental data automatically |
-| `PGAP supplemental data not found` | Run `bactowise db download --pgap` (~30 GB). This is required for every standard run — use `--skip pgap` if you want to run without it. |
-| PGAP fails with cgroups error | This is a VM/HPC kernel issue with CPU limits. It is handled automatically — BactoWise does not pass `-c` to pgap.py. If it still occurs, check `results/pgap/run_<timestamp>/cwltool.log` |
+| Download interrupted | Re-run the same `bactowise db download` command — partial downloads resume automatically |
+| `pgap.py not found` | Run `bactowise db download --pgap` — downloads pgap.py and supplemental data automatically |
+| `PGAP supplemental data not found` | Run `bactowise db download --pgap` (~30 GB). Use `--skip pgap` to run without it. |
+| PGAP fails with cgroups error | VM/HPC kernel issue — handled automatically. If it persists, check `results/pgap/run_<timestamp>/cwltool.log` |
 | PGAP fails with exit code 255 | Check `results/pgap/run_<timestamp>/cwltool.log` for the detailed Singularity error |
-| `No module named 'pkg_resources'` (CheckM) | Delete `checkm_env` and rerun: `conda env remove -n checkm_env -y && bactowise run -f genome.fasta` |
+| `No module named 'pkg_resources'` (CheckM or MEFinder) | Delete the affected env and rerun: `conda env remove -n checkm_env -y` or `conda env remove -n mefinder_env -y` |
+| EggNOG download stalls or fails at ~16% | Re-run `bactowise db download --eggnog` — the download resumes from the last completed byte automatically |
+| `EggNOG database not found` | Run `bactowise db download --eggnog` (~20 GB). Pre-downloading is strongly recommended before the first full run. |
+| `Platon database not found` | Run `bactowise db download --platon` (~1.6 GB) |
+| `platon=latest` not found | Should not occur with the current version — if it does, `conda env remove -n platon_env -y` and rerun |
+| `No module named 'mgedb'` (MEFinder) | Delete the env and rerun: `conda env remove -n mefinder_env -y && bactowise run ...` — BactoWise will reinstall it correctly |
+| `phigaro-setup failed` | Run manually: `conda run -n phigaro_env phigaro-setup -c ~/.bactowise/databases/phigaro/config.yml -p ~/.bactowise/databases/phigaro/pvog -f --no-updatedb` |
+| `emapper.py: command not found` | BactoWise creates `eggnogmapper_env` automatically — check preflight output |
+| `Consensus FAA not found` for EggNOG-mapper | Ensure stage 3 completed successfully. Check `results/consensus/logs/consensus.log`. |
 
 ---
 
