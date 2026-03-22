@@ -114,13 +114,19 @@ class AMRFinderPlusRunner(CondaToolRunner):
         self._ensure_database()
 
         # Show point mutation status at preflight so the user knows upfront
-        amr_taxon = self._resolve_organism()
-        if amr_taxon:
-            source = "pipeline.yaml override" if self.config.params.get("organism") \
-                     else f"auto-detected from '-n {self.organism}'"
+        amr_taxon, source = self._resolve_organism()
+        if source == "autodetect":
             console.print(
                 f"  [success]✓[/success]  Point mutation screening: "
-                f"[bold]{amr_taxon}[/bold] ({source})"
+                f"[bold]{amr_taxon}[/bold] (auto-detected from '-n {self.organism}')"
+            )
+        elif source == "pipeline.yaml":
+            console.print(
+                f"  [warning]⚠[/warning]  Point mutation screening: [bold]{amr_taxon}[/bold] "
+                f"(pipeline.yaml fallback)\n"
+                f"     No AMRFinderPlus taxon match found for '{self.organism}' — "
+                f"using organism: {amr_taxon} from pipeline.yaml instead.\n"
+                f"     If this is unintentional, remove the organism param from pipeline.yaml."
             )
         else:
             console.print(
@@ -223,16 +229,23 @@ class AMRFinderPlusRunner(CondaToolRunner):
 
         output_tsv = self.output_dir / "amrfinderplus_results.tsv"
         log_file   = self.log_dir / "amrfinderplus.log"
-        amr_taxon  = self._resolve_organism()
+        amr_taxon, source  = self._resolve_organism()
 
         cmd = self._build_command(fasta, output_tsv, amr_taxon)
 
         self._cprint(f"[label]Nucleotide:[/label] [muted]{fasta}[/muted]")
         self._cprint(f"[label]Output:[/label]     [muted]{output_tsv}[/muted]")
-        if amr_taxon:
+        if source == "autodetect":
             self._cprint(
                 f"[label]Point mutations:[/label] [success]enabled[/success] "
-                f"(--organism [bold]{amr_taxon}[/bold])"
+                f"(--organism [bold]{amr_taxon}[/bold], auto-detected)"
+            )
+        elif source == "pipeline.yaml":
+            self._cprint(
+                f"[label]Point mutations:[/label] [warning]enabled via pipeline.yaml fallback[/warning] "
+                f"(--organism [bold]{amr_taxon}[/bold])\n"
+                f"  [warning]⚠[/warning]  No match for '{self.organism}' — "
+                f"using {amr_taxon} from pipeline.yaml"
             )
         else:
             self._cprint(
@@ -260,29 +273,29 @@ class AMRFinderPlusRunner(CondaToolRunner):
         console.print()
         return self.output_dir
 
-    def _resolve_organism(self) -> str | None:
+    def _resolve_organism(self) -> tuple[str | None, str]:
         """
         Determine the AMRFinderPlus --organism value to use.
 
-        Priority:
-          1. Auto-detected from self.organism (the -n/--organism CLI input) — wins
-          2. Explicit `organism` param in pipeline.yaml — fallback if -n yields no match
-          3. None — run without --organism (no point mutation screening)
+        Returns (taxon, source) where source is one of:
+          "autodetect"  — matched from the -n/--organism CLI input
+          "pipeline.yaml" — fell back to the organism param in pipeline.yaml
+          "none"        — no match found anywhere
 
-        This means the organism the user provides at runtime always takes precedence
-        over any taxon set in the config file.
+        Priority:
+          1. Auto-detected from self.organism (the -n/--organism CLI input)
+          2. Explicit `organism` param in pipeline.yaml — fallback if -n yields no match
+          3. (None, "none") — no point mutation screening
         """
-        # 1. Auto-detect from the pipeline -n input first
         detected = _detect_amrfinder_organism(self.organism)
         if detected:
-            return detected
+            return detected, "autodetect"
 
-        # 2. Fall back to the manual pipeline.yaml param if -n didn't match
         manual = self.config.params.get("organism")
         if manual:
-            return str(manual)
+            return str(manual), "pipeline.yaml"
 
-        return None
+        return None, "none"
 
     def _build_command(
         self,

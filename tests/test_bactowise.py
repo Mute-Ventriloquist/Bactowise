@@ -1547,9 +1547,9 @@ class TestAMRFinderPlusOrganismDetection:
             params={"plus": True, "organism": "Salmonella"},
         )
         runner = AMRFinderPlusRunner(tool, tmp_path, organism="Escherichia coli")
-        # -n "Escherichia coli" auto-detects to Escherichia, which overrides
-        # the pipeline.yaml "Salmonella" param
-        assert runner._resolve_organism() == "Escherichia"
+        taxon, source = runner._resolve_organism()
+        assert taxon == "Escherichia"
+        assert source == "autodetect"
 
     def test_pipeline_yaml_used_when_autodetect_has_no_match(self, tmp_path):
         from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
@@ -1560,8 +1560,9 @@ class TestAMRFinderPlusOrganismDetection:
             params={"plus": True, "organism": "Salmonella"},
         )
         runner = AMRFinderPlusRunner(tool, tmp_path, organism="Mycoplasmoides genitalium")
-        # -n doesn't match anything, so pipeline.yaml fallback is used
-        assert runner._resolve_organism() == "Salmonella"
+        taxon, source = runner._resolve_organism()
+        assert taxon == "Salmonella"
+        assert source == "pipeline.yaml"
 
     def test_autodetect_used_when_no_yaml_override(self, tmp_path):
         from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
@@ -1572,7 +1573,9 @@ class TestAMRFinderPlusOrganismDetection:
             params={"plus": True},
         )
         runner = AMRFinderPlusRunner(tool, tmp_path, organism="Staphylococcus aureus")
-        assert runner._resolve_organism() == "Staphylococcus_aureus"
+        taxon, source = runner._resolve_organism()
+        assert taxon == "Staphylococcus_aureus"
+        assert source == "autodetect"
 
     def test_resolve_none_for_unsupported_organism(self, tmp_path):
         from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
@@ -1583,7 +1586,9 @@ class TestAMRFinderPlusOrganismDetection:
             params={"plus": True},
         )
         runner = AMRFinderPlusRunner(tool, tmp_path, organism="Mycoplasmoides genitalium")
-        assert runner._resolve_organism() is None
+        taxon, source = runner._resolve_organism()
+        assert taxon is None
+        assert source == "none"
 
     def test_build_command_includes_organism_when_matched(self, tmp_path):
         from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
