@@ -84,7 +84,10 @@ _EGGNOG_DB_MARKER = "eggnog_proteins.dmnd"   # largest file, written last
 _SPIFINDER_ROOT   = Path("~/.bactowise/databases/spifinder").expanduser()
 _SPIFINDER_SCRIPT = _SPIFINDER_ROOT / "spifinder" / "spifinder.py"
 _SPIFINDER_DB_DIR = _SPIFINDER_ROOT / "spifinder_db"
-_SPIFINDER_DB_MARKER = "enterica.fsa"   # one of the SPI FASTA files in the db
+# The db contains several .fsa files (one per SPI). We glob for any of them
+# rather than hardcoding a single filename so the check survives upstream
+# renames without requiring a BactoWise update.
+_SPIFINDER_DB_MARKER_GLOB = "*.fsa"
 
 # AMRFinderPlus: amrfinder -u stores the database inside the conda environment
 # at envs/amrfinderplus_env/share/amrfinderplus/data/. BactoWise cannot
@@ -366,8 +369,16 @@ def is_amrfinderplus_db_present() -> bool:
 
 
 def is_spifinder_present() -> bool:
-    """Return True if SPIFinder script and database are both present."""
-    return _SPIFINDER_SCRIPT.exists() and (_SPIFINDER_DB_DIR / _SPIFINDER_DB_MARKER).exists()
+    """Return True if SPIFinder script and database are both present.
+    Checks for the script and at least one .fsa file in the database directory,
+    rather than a specific filename, so upstream renames don't break the check.
+    """
+    import glob as _glob
+    if not _SPIFINDER_SCRIPT.exists():
+        return False
+    if not _SPIFINDER_DB_DIR.exists():
+        return False
+    return bool(_glob.glob(str(_SPIFINDER_DB_DIR / _SPIFINDER_DB_MARKER_GLOB)))
 
 
 def spifinder_db_path() -> Path:
