@@ -19,17 +19,20 @@ from bactowise.utils.db_manager import (
     _EGGNOG_DB_DIR,
     _PHIGARO_DB_DIR,
     _PLATON_DB_DIR,
+    _SPIFINDER_ROOT,
     download_bakta,
     download_checkm,
     download_eggnog,
     download_pgap,
     download_platon,
+    download_spifinder,
     is_bakta_present,
     is_checkm_present,
     is_eggnog_present,
     is_pgap_present,
     is_phigaro_present,
     is_platon_present,
+    is_spifinder_present,
 )
 
 app = typer.Typer(
@@ -53,8 +56,9 @@ def db_download(
     checkm: bool = typer.Option(False, "--checkm", help="CheckM only."),
     bakta:  bool = typer.Option(False, "--bakta",  help="Bakta only."),
     pgap:   bool = typer.Option(False, "--pgap",   help="PGAP only (~38 GB)."),
-    platon: bool = typer.Option(False, "--platon",  help="Platon only (~2.8 GB)."),
-    eggnog: bool = typer.Option(False, "--eggnog",  help="EggNOG only (~48 GB)."),
+    platon: bool = typer.Option(False, "--platon",   help="Platon only (~2.8 GB)."),
+    eggnog: bool = typer.Option(False, "--eggnog",   help="EggNOG only (~48 GB)."),
+    spifinder: bool = typer.Option(False, "--spifinder", help="SPIFinder only (tool + db, ~3 MB, git clone)."),
     force:  bool = typer.Option(
         False, "--force-db-download",
         help="Re-download even if already present.",
@@ -69,6 +73,7 @@ def db_download(
       pgap/        — PGAP supplemental data (~38 GB; ~100 GB total with working space)
       platon/      — Platon plasmid database (~2.8 GB)
       eggnog/      — EggNOG-mapper database (~48 GB)
+      spifinder/   — SPIFinder tool + database, git-cloned (~3 MB)
 
     \b
     Use individual flags to download only specific databases:
@@ -77,19 +82,21 @@ def db_download(
       bactowise db download --pgap
       bactowise db download --platon
       bactowise db download --eggnog
+      bactowise db download --spifinder
 
     \b
     Examples:
       bactowise db download
       bactowise db download --eggnog --force-db-download
-      bactowise db download --platon --force-db-download
+      bactowise db download --spifinder --force-db-download
     """
-    any_specified = checkm or bakta or pgap or platon or eggnog
-    download_checkm_flag = checkm or not any_specified
-    download_bakta_flag  = bakta  or not any_specified
-    download_pgap_flag   = pgap   or not any_specified
-    download_platon_flag = platon or not any_specified
-    download_eggnog_flag = eggnog or not any_specified
+    any_specified = checkm or bakta or pgap or platon or eggnog or spifinder
+    download_checkm_flag    = checkm    or not any_specified
+    download_bakta_flag     = bakta     or not any_specified
+    download_pgap_flag      = pgap      or not any_specified
+    download_platon_flag    = platon    or not any_specified
+    download_eggnog_flag    = eggnog    or not any_specified
+    download_spifinder_flag = spifinder or not any_specified
 
     typer.echo(f"\nBactoWise — Database Download")
     typer.echo(f"  Storage : {DEFAULT_DB_ROOT}")
@@ -132,6 +139,13 @@ def db_download(
             typer.echo(f"\n✗ EggNOG: {e}", err=True)
             errors.append("eggnog")
 
+    if download_spifinder_flag:
+        try:
+            download_spifinder(force=force)
+        except RuntimeError as e:
+            typer.echo(f"\n✗ SPIFinder: {e}", err=True)
+            errors.append("spifinder")
+
     if errors:
         typer.echo(f"\n✗ Failed: {', '.join(errors)}\n", err=True)
         raise typer.Exit(code=1)
@@ -151,12 +165,13 @@ def db_status():
     console.print(f"\n[bold]BactoWise — Database Status[/bold]")
     console.print(f"  [muted]Default location: {DEFAULT_DB_ROOT}[/muted]")
 
-    checkm_ok  = is_checkm_present()
-    bakta_ok   = is_bakta_present()
-    pgap_ok    = is_pgap_present()
-    phigaro_ok = is_phigaro_present()
-    platon_ok  = is_platon_present()
-    eggnog_ok  = is_eggnog_present()
+    checkm_ok    = is_checkm_present()
+    bakta_ok     = is_bakta_present()
+    pgap_ok      = is_pgap_present()
+    phigaro_ok   = is_phigaro_present()
+    platon_ok    = is_platon_present()
+    eggnog_ok    = is_eggnog_present()
+    spifinder_ok = is_spifinder_present()
 
     console.print()
     console.print("  [bold white]Stage 1 — QC[/bold white]")
@@ -191,6 +206,11 @@ def db_status():
         f"  EggNOG        → [muted]{_EGGNOG_DB_DIR}[/muted]"
     )
     console.print(
+        f"    {'[success]✓[/success]' if spifinder_ok else '[error]✗[/error]'}"
+        f"  SPIFinder     → [muted]{_SPIFINDER_ROOT}[/muted]"
+        + ("" if spifinder_ok else "  [muted](Salmonella only — git clone)[/muted]")
+    )
+    console.print(
         f"    [muted]~  AMRFinderPlus → database managed inside amrfinderplus_env "
         f"(downloaded automatically by amrfinder -u, not tracked here)[/muted]"
     )
@@ -200,7 +220,7 @@ def db_status():
     )
 
     all_core_ok   = checkm_ok and bakta_ok and pgap_ok
-    all_stage4_ok = phigaro_ok and platon_ok and eggnog_ok
+    all_stage4_ok = phigaro_ok and platon_ok and eggnog_ok and spifinder_ok
 
     console.print()
     if not all_core_ok:

@@ -77,6 +77,15 @@ _PLATON_DB_TARBALL = "db.tar.gz"
 _EGGNOG_DB_DIR    = Path("~/.bactowise/databases/eggnog").expanduser()
 _EGGNOG_DB_MARKER = "eggnog_proteins.dmnd"   # largest file, written last
 
+# SPIFinder: Salmonella Pathogenicity Island finder (CGE tool).
+# No Docker image or conda package exists — installed via git clone.
+# Both the tool script and the database are cloned from Bitbucket into
+# ~/.bactowise/databases/spifinder/ so everything is co-located.
+_SPIFINDER_ROOT   = Path("~/.bactowise/databases/spifinder").expanduser()
+_SPIFINDER_SCRIPT = _SPIFINDER_ROOT / "spifinder" / "spifinder.py"
+_SPIFINDER_DB_DIR = _SPIFINDER_ROOT / "spifinder_db"
+_SPIFINDER_DB_MARKER = "enterica.fsa"   # one of the SPI FASTA files in the db
+
 # AMRFinderPlus: amrfinder -u stores the database inside the conda environment
 # at envs/amrfinderplus_env/share/amrfinderplus/data/. BactoWise cannot
 # redirect this path (amrfinder -u has no --output flag), so it is detected
@@ -354,6 +363,83 @@ def download_eggnog(force: bool = False) -> Path:
 def is_amrfinderplus_db_present() -> bool:
     """Return True if the AMRFinderPlus database is present inside the conda env."""
     return amrfinderplus_db_path() is not None
+
+
+def is_spifinder_present() -> bool:
+    """Return True if SPIFinder script and database are both present."""
+    return _SPIFINDER_SCRIPT.exists() and (_SPIFINDER_DB_DIR / _SPIFINDER_DB_MARKER).exists()
+
+
+def spifinder_db_path() -> Path:
+    """Return the SPIFinder database directory path."""
+    return _SPIFINDER_DB_DIR
+
+
+def spifinder_script_path() -> Path:
+    """Return the path to the spifinder.py script."""
+    return _SPIFINDER_SCRIPT
+
+
+def download_spifinder(force: bool = False) -> Path:
+    """
+    Install SPIFinder by cloning both the tool and the database from Bitbucket.
+
+    No Docker image or conda package exists for SPIFinder — it is a Python
+    script distributed only via Bitbucket. Both repos are cloned into
+    ~/.bactowise/databases/spifinder/:
+        spifinder/      — the Python script (spifinder.py)
+        spifinder_db/   — the BLAST database files (~3 MB)
+
+    Parameters
+    ----------
+    force : re-clone even if already present (pulls latest commits)
+    """
+    _TOOL_URL = "https://bitbucket.org/genomicepidemiology/spifinder.git"
+    _DB_URL   = "https://bitbucket.org/genomicepidemiology/spifinder_db.git"
+
+    if is_spifinder_present() and not force:
+        print(f"  ✓  SPIFinder already present at: {_SPIFINDER_ROOT}")
+        print(f"     (use --force-db-download to re-clone)")
+        return _SPIFINDER_DB_DIR
+
+    _SPIFINDER_ROOT.mkdir(parents=True, exist_ok=True)
+
+    tool_dir = _SPIFINDER_ROOT / "spifinder"
+    db_dir   = _SPIFINDER_DB_DIR
+
+    for label, url, dest in [
+        ("SPIFinder script", _TOOL_URL, tool_dir),
+        ("SPIFinder database", _DB_URL, db_dir),
+    ]:
+        if dest.exists() and force:
+            print(f"  Removing existing {label} at: {dest}")
+            shutil.rmtree(dest)
+
+        if dest.exists():
+            print(f"  ✓  {label} already present at: {dest}")
+            continue
+
+        print(f"\n  Cloning {label}...")
+        print(f"  Source: {url}")
+        result = subprocess.run(
+            ["git", "clone", url, str(dest)],
+            text=True,
+        )
+        if result.returncode != 0 or not dest.exists():
+            raise RuntimeError(
+                f"Failed to clone {label} from {url}\n"
+                f"Ensure git is installed and Bitbucket is reachable."
+            )
+        print(f"  ✓  {label} cloned to: {dest}")
+
+    if not is_spifinder_present():
+        raise RuntimeError(
+            f"SPIFinder installation appeared to succeed but expected files "
+            f"were not found at {_SPIFINDER_ROOT}."
+        )
+
+    print(f"  ✓  SPIFinder ready at: {_SPIFINDER_ROOT}\n")
+    return _SPIFINDER_DB_DIR
 
 
 # ── Download orchestration ─────────────────────────────────────────────────────

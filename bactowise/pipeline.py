@@ -11,9 +11,11 @@ from bactowise.utils.console import console, stage_rule
 from bactowise.utils.db_manager import (
     download_all,
     download_pgap,
+    download_spifinder,
     is_checkm_present,
     is_bakta_present,
     is_pgap_present,
+    is_spifinder_present,
 )
 
 
@@ -428,18 +430,26 @@ class Pipeline:
         """
         Check whether required databases are present and download any that are missing.
         Only downloads databases needed by the active (non-skipped) tools in this run.
+        SPIFinder is only needed when the organism is Salmonella.
         """
         tool_names = {t.name for t in self.config.tools} - self.skip - set(self.gff_files)
 
-        needs_checkm = "checkm" in tool_names
-        needs_bakta  = "bakta"  in tool_names
-        needs_pgap   = "pgap"   in tool_names
+        needs_checkm    = "checkm"    in tool_names
+        needs_bakta     = "bakta"     in tool_names
+        needs_pgap      = "pgap"      in tool_names
+        # SPIFinder git install is only needed for Salmonella runs
+        needs_spifinder = (
+            "spifinder" in tool_names
+            and self.organism.strip().lower().split()[0] == "salmonella"
+            if self.organism else False
+        )
 
-        missing_checkm = needs_checkm and not is_checkm_present()
-        missing_bakta  = needs_bakta  and not is_bakta_present()
-        missing_pgap   = needs_pgap   and not is_pgap_present()
+        missing_checkm    = needs_checkm    and not is_checkm_present()
+        missing_bakta     = needs_bakta     and not is_bakta_present()
+        missing_pgap      = needs_pgap      and not is_pgap_present()
+        missing_spifinder = needs_spifinder and not is_spifinder_present()
 
-        if not missing_checkm and not missing_bakta and not missing_pgap:
+        if not any([missing_checkm, missing_bakta, missing_pgap, missing_spifinder]):
             return
 
         console.print()
@@ -454,6 +464,8 @@ class Pipeline:
                 bakta=missing_bakta,
                 pgap=missing_pgap,
             )
+            if missing_spifinder:
+                download_spifinder(force=False)
         except RuntimeError as e:
             raise RuntimeError(
                 f"Database download failed: {e}\n"

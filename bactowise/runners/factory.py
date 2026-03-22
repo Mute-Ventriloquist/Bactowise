@@ -15,6 +15,7 @@ from bactowise.runners.pgap_runner import PGAPRunner
 from bactowise.runners.phigaro_runner import PhigaroRunner
 from bactowise.runners.platon_runner import PlatonRunner
 from bactowise.runners.singularity_runner import SingularityToolRunner
+from bactowise.runners.spifinder_runner import SPIFinderRunner
 
 
 class RunnerFactory:
@@ -42,6 +43,8 @@ class RunnerFactory:
             return MobileElementFinderRunner(tool_config, output_dir, organism, global_threads)
         if tool_config.name == "eggnogmapper":
             return EggNOGMapperRunner(tool_config, output_dir, organism, global_threads)
+        if tool_config.name == "spifinder":
+            return SPIFinderRunner(tool_config, output_dir, organism, global_threads)
 
         if tool_config.runtime == "conda":
             return CondaToolRunner(tool_config, output_dir, organism, global_threads)

@@ -36,6 +36,7 @@ _TOOL_COLOURS: dict[str, str] = {
     "platon":       "cornflower_blue",
     "mefinder":     "gold1",
     "eggnogmapper": "chartreuse3",
+    "spifinder":    "pale_turquoise1",
 }
 _DEFAULT_TOOL_COLOUR = "bright_blue"
 

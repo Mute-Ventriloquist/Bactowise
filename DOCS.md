@@ -14,6 +14,7 @@
     - [Platon](#platon--plasmid-contig-classification-and-characterisation)
     - [MEFinder](#mefinder-mobileelemenfinder--transposon-and-is-element-detection)
     - [EggNOG-mapper](#eggnog-mapper--go-terms-kegg-pathways-and-cog-annotation)
+    - [SPIFinder](#spifinder--salmonella-pathogenicity-island-detection)
   - [9. Downstream analysis — pangenome with Panaroo](#9-downstream-analysis--pangenome-with-panaroo)
   - [10. Troubleshooting](#10-troubleshooting)
 - [Developer Guide](#developer-guide)
@@ -146,6 +147,15 @@ plan accordingly.
 Stored at `~/.bactowise/databases/phigaro/`. Downloaded automatically by
 `phigaro-setup` during preflight. No separate download command is needed.
 
+**SPIFinder tool and database (~3 MB, git clone):**
+```bash
+bactowise db download --spifinder
+```
+Stored at `~/.bactowise/databases/spifinder/`. Both the tool script and its
+BLAST database are cloned from Bitbucket via git. This is only installed when
+the organism genus is Salmonella — BactoWise skips it entirely for all other
+organisms. Requires `git` to be available on your PATH.
+
 **AMRFinderPlus and MEFinder databases:**
 Both are self-managed inside their respective conda environments and are not
 tracked in `~/.bactowise/databases/`:
@@ -155,19 +165,21 @@ tracked in `~/.bactowise/databases/`:
 ### Download individual databases
 
 ```bash
-bactowise db download --checkm   # CheckM only
-bactowise db download --bakta    # Bakta only
-bactowise db download --pgap     # PGAP only (~30 GB)
-bactowise db download --platon   # Platon only (~1.6 GB)
-bactowise db download --eggnog   # EggNOG only (~20 GB)
+bactowise db download --checkm     # CheckM only (~1.4 GB)
+bactowise db download --bakta      # Bakta only (~4 GB)
+bactowise db download --pgap       # PGAP only (~38 GB)
+bactowise db download --platon     # Platon only (~2.8 GB)
+bactowise db download --eggnog     # EggNOG only (~48 GB)
+bactowise db download --spifinder  # SPIFinder only (~3 MB, git clone)
 ```
 
 ### Force re-download
 
 ```bash
-bactowise db download --force-db-download             # all managed databases
-bactowise db download --eggnog --force-db-download    # EggNOG only
-bactowise db download --platon --force-db-download    # Platon only
+bactowise db download --force-db-download               # all managed databases
+bactowise db download --eggnog --force-db-download      # EggNOG only
+bactowise db download --platon --force-db-download      # Platon only
+bactowise db download --spifinder --force-db-download   # SPIFinder only (re-clones)
 ```
 
 ### Check database status
@@ -190,6 +202,7 @@ Stage 4 — Supplementary
   ✓  Phigaro       → ~/.bactowise/databases/phigaro      (~1.6 GB)
   ✓  Platon        → ~/.bactowise/databases/platon/db    (~2.8 GB)
   ✓  EggNOG        → ~/.bactowise/databases/eggnog       (~48 GB)
+  ✓  SPIFinder     → ~/.bactowise/databases/spifinder    (~3 MB, Salmonella only)
   ~  AMRFinderPlus → database managed inside amrfinderplus_env (not tracked here)
   ~  MEFinder      → database bundled with pip install inside mefinder_env (not tracked here)
 ```
@@ -336,6 +349,12 @@ output directory or one specified with `-o`:
 │   ├── mefinder_output.gff       ← MGE locations in GFF3 format
 │   └── logs/
 │       └── mefinder.log
+├── spifinder/               ← Stage 4 (Salmonella only — absent for other organisms)
+│   ├── spifinder_results.tsv     ← SPI hits with coverage and identity
+│   ├── spifinder_results.json    ← full CGE-format results
+│   ├── Hit_in_genome_seq.fsa     ← matched genomic sequences (FASTA)
+│   └── logs/
+│       └── spifinder.log
 └── eggnogmapper/            ← Stage 4
     ├── eggnog_output.emapper.annotations   ← GO / KEGG / COG per gene (TSV)
     ├── eggnog_output.emapper.hits          ← raw DIAMOND hits
@@ -808,6 +827,66 @@ related eukaryotic orthologs. Override in `pipeline.yaml` if needed:
 
 ---
 
+### SPIFinder — Salmonella Pathogenicity Island detection
+
+SPIFinder screens Salmonella assemblies against a curated BLAST database of
+15 known Salmonella Pathogenicity Islands (SPI-1 through SPI-14 and SPI-24),
+identifying which islands are present and reporting BLAST coverage and identity
+for each hit. It is a CGE tool developed at the Technical University of Denmark.
+
+**Salmonella-only constraint:** SPIFinder only runs when the genus in
+`-n`/`--organism` is Salmonella. For all other organisms BactoWise prints an
+informational skip message and moves on — no output directory is created and
+no time is spent on installation or database setup.
+
+```
+bactowise run -f genome.fasta -n "Salmonella enterica"    # SPIFinder runs
+bactowise run -f genome.fasta -n "Escherichia coli"       # SPIFinder skipped
+```
+
+**Installation:** No Docker image or conda package exists for SPIFinder.
+BactoWise installs it by git-cloning both the tool and its database from
+Bitbucket into `~/.bactowise/databases/spifinder/` on first run, or
+explicitly with:
+
+```bash
+bactowise db download --spifinder
+```
+
+This requires `git` to be available on your PATH. On HPC clusters:
+```bash
+module load git
+```
+
+**Database:** The SPI BLAST database is tiny (~3 MB) and is cloned alongside
+the tool. No separate download step is needed.
+
+**Output:**
+```
+<output_dir>/spifinder/
+    spifinder_results.tsv       — SPI hits with coverage and identity per island
+    spifinder_results.json      — full CGE-format results
+    Hit_in_genome_seq.fsa       — matched genomic sequences (FASTA)
+    logs/spifinder.log
+```
+
+**Configuring thresholds:**
+
+Default thresholds are 95% identity and 60% coverage. These can be adjusted
+in `pipeline.yaml`:
+
+```yaml
+- name: spifinder
+  params:
+    min_cov: 0.60     # minimum coverage  0–1 (default: 0.60)
+    threshold: 0.95   # minimum identity  0–1 (default: 0.95)
+```
+
+Lowering `threshold` may detect more divergent SPI variants at the cost of
+increased false positives. Raising `min_cov` reduces partial hits.
+
+---
+
 ## 9. Downstream analysis — pangenome with Panaroo
 
 Panaroo is a pangenome pipeline that takes GFF annotation files as input and
@@ -886,13 +965,16 @@ all available options.
 | PGAP fails with exit code 255 | Check `results/pgap/run_<timestamp>/cwltool.log` for the detailed Singularity error |
 | `No module named 'pkg_resources'` (CheckM or MEFinder) | Delete the affected env and rerun: `conda env remove -n checkm_env -y` or `conda env remove -n mefinder_env -y` |
 | EggNOG download stalls or fails at ~16% | Re-run `bactowise db download --eggnog` — the download resumes from the last completed byte automatically |
-| `EggNOG database not found` | Run `bactowise db download --eggnog` (~20 GB). Pre-downloading is strongly recommended before the first full run. |
-| `Platon database not found` | Run `bactowise db download --platon` (~1.6 GB) |
+| `EggNOG database not found` | Run `bactowise db download --eggnog` (~48 GB). Pre-downloading is strongly recommended before the first full run. |
+| `Platon database not found` | Run `bactowise db download --platon` (~2.8 GB) |
 | `platon=latest` not found | Should not occur with the current version — if it does, `conda env remove -n platon_env -y` and rerun |
 | `No module named 'mgedb'` (MEFinder) | Delete the env and rerun: `conda env remove -n mefinder_env -y && bactowise run ...` — BactoWise will reinstall it correctly |
 | `phigaro-setup failed` | Run manually: `conda run -n phigaro_env phigaro-setup -c ~/.bactowise/databases/phigaro/config.yml -p ~/.bactowise/databases/phigaro/pvog -f --no-updatedb` |
 | `emapper.py: command not found` | BactoWise creates `eggnogmapper_env` automatically — check preflight output |
 | `Consensus FAA not found` for EggNOG-mapper | Ensure stage 3 completed successfully. Check `results/consensus/logs/consensus.log`. |
+| `SPIFinder: Failed to clone` | Ensure `git` is on your PATH (`module load git` on HPC) and Bitbucket is reachable. Then re-run `bactowise db download --spifinder`. |
+| `SPIFinder not found` / missing script | Run `bactowise db download --spifinder` to re-clone. If it persists, delete the directory and retry: `rm -rf ~/.bactowise/databases/spifinder && bactowise db download --spifinder` |
+| SPIFinder skipped unexpectedly | SPIFinder only runs when genus is Salmonella. Check that `-n` starts with `Salmonella` (e.g. `-n "Salmonella enterica"`). |
 
 ---
 
@@ -946,6 +1028,7 @@ runs. Unknown fields are rejected with a clear error message.
 | **Platon** | Plasmid contig classification and characterisation | genome FASTA | RDS database (~2.8 GB) | `~/.bactowise/databases/platon/db/` |
 | **MEFinder** | Transposons, IS elements, integrons | genome FASTA | MGEdb, bundled with pip package | `mefinder_env` internal |
 | **EggNOG-mapper** | GO terms, KEGG pathways, COG categories | consensus `GENE.faa` (stage 3) | eggNOG DIAMOND + SQLite (~48 GB) | `~/.bactowise/databases/eggnog/` |
+| **SPIFinder** | Salmonella Pathogenicity Island detection | genome FASTA | SPI BLAST database (~3 MB, git clone) | `~/.bactowise/databases/spifinder/` |
 
 EggNOG-mapper is the only stage 4 tool that uses a stage 3 output — it annotates
 every protein in the consensus FASTA to provide biological context for each

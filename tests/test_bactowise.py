@@ -1620,3 +1620,145 @@ class TestAMRFinderPlusOrganismDetection:
         with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
             cmd = runner._build_command(fasta, output_tsv, None)
         assert "--organism" not in cmd
+
+
+# ─── SPIFinder tests ──────────────────────────────────────────────────────────
+
+class TestSPIFinderRunner:
+    """Tests for SPIFinderRunner — Salmonella gate and command building."""
+
+    def _make_tool_config(self) -> ToolConfig:
+        return ToolConfig(
+            name="spifinder",
+            version="latest",
+            runtime="conda",
+            depends_on=["consensus"],
+            conda_env={
+                "name": "spifinder_env",
+                "channels": ["conda-forge", "bioconda", "defaults"],
+                "dependencies": [],
+            },
+            params={"min_cov": 0.60, "threshold": 0.95},
+        )
+
+    # ── Salmonella gate ───────────────────────────────────────────────────────
+
+    def test_is_salmonella_true(self, tmp_path):
+        from bactowise.runners.spifinder_runner import SPIFinderRunner
+        runner = SPIFinderRunner(self._make_tool_config(), tmp_path,
+                                 organism="Salmonella enterica")
+        assert runner._is_salmonella() is True
+
+    def test_is_salmonella_genus_only(self, tmp_path):
+        from bactowise.runners.spifinder_runner import SPIFinderRunner
+        runner = SPIFinderRunner(self._make_tool_config(), tmp_path,
+                                 organism="Salmonella")
+        assert runner._is_salmonella() is True
+
+    def test_is_salmonella_case_insensitive(self, tmp_path):
+        from bactowise.runners.spifinder_runner import SPIFinderRunner
+        runner = SPIFinderRunner(self._make_tool_config(), tmp_path,
+                                 organism="SALMONELLA enterica")
+        assert runner._is_salmonella() is True
+
+    def test_is_not_salmonella_escherichia(self, tmp_path):
+        from bactowise.runners.spifinder_runner import SPIFinderRunner
+        runner = SPIFinderRunner(self._make_tool_config(), tmp_path,
+                                 organism="Escherichia coli")
+        assert runner._is_salmonella() is False
+
+    def test_is_not_salmonella_empty(self, tmp_path):
+        from bactowise.runners.spifinder_runner import SPIFinderRunner
+        runner = SPIFinderRunner(self._make_tool_config(), tmp_path, organism="")
+        assert runner._is_salmonella() is False
+
+    def test_is_not_salmonella_mycoplasmoides(self, tmp_path):
+        from bactowise.runners.spifinder_runner import SPIFinderRunner
+        runner = SPIFinderRunner(self._make_tool_config(), tmp_path,
+                                 organism="Mycoplasmoides genitalium")
+        assert runner._is_salmonella() is False
+
+    # ── Factory registration ──────────────────────────────────────────────────
+
+    def test_factory_returns_spifinder_runner(self, tmp_path):
+        from bactowise.runners.spifinder_runner import SPIFinderRunner
+        runner = RunnerFactory.create(self._make_tool_config(), tmp_path,
+                                      organism="Salmonella enterica")
+        assert isinstance(runner, SPIFinderRunner)
+
+    # ── Command building ──────────────────────────────────────────────────────
+
+    def test_build_command_includes_required_flags(self, tmp_path):
+        from bactowise.runners.spifinder_runner import SPIFinderRunner
+        from bactowise.utils.db_manager import _SPIFINDER_SCRIPT, _SPIFINDER_DB_DIR
+        runner = SPIFinderRunner(self._make_tool_config(), tmp_path,
+                                 organism="Salmonella enterica")
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+        blastn = "/usr/bin/blastn"
+
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta, blastn)
+
+        assert str(_SPIFINDER_SCRIPT) in cmd
+        assert "-i" in cmd
+        assert str(fasta.resolve()) in cmd
+        assert "-o" in cmd
+        assert "-p" in cmd
+        assert str(_SPIFINDER_DB_DIR) in cmd
+        assert "-mp" in cmd
+        assert blastn in cmd
+        assert "-l" in cmd
+        assert "0.6" in cmd
+        assert "-t" in cmd
+        assert "0.95" in cmd
+
+    def test_build_command_uses_conda_run(self, tmp_path):
+        from bactowise.runners.spifinder_runner import SPIFinderRunner
+        runner = SPIFinderRunner(self._make_tool_config(), tmp_path,
+                                 organism="Salmonella enterica")
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta, "/usr/bin/blastn")
+
+        assert "/usr/bin/conda" in cmd
+        assert "run" in cmd
+        assert "spifinder_env" in cmd
+        assert "python" in cmd
+
+    def test_build_command_custom_thresholds(self, tmp_path):
+        from bactowise.runners.spifinder_runner import SPIFinderRunner
+        tool = ToolConfig(
+            name="spifinder", version="latest", runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "spifinder_env", "dependencies": []},
+            params={"min_cov": 0.80, "threshold": 0.98},
+        )
+        runner = SPIFinderRunner(tool, tmp_path, organism="Salmonella enterica")
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta, "/usr/bin/blastn")
+
+        assert "0.8" in cmd
+        assert "0.98" in cmd
+
+    # ── db_manager presence checks ────────────────────────────────────────────
+
+    def test_is_spifinder_present_false_when_missing(self, tmp_path):
+        from bactowise.utils.db_manager import is_spifinder_present
+        # The default path won't exist in the test environment
+        # Just confirm the function returns a bool without raising
+        result = is_spifinder_present()
+        assert isinstance(result, bool)
+
+    def test_spifinder_db_path_returns_path(self):
+        from bactowise.utils.db_manager import spifinder_db_path, _SPIFINDER_DB_DIR
+        assert spifinder_db_path() == _SPIFINDER_DB_DIR
+
+    def test_spifinder_script_path_returns_path(self):
+        from bactowise.utils.db_manager import spifinder_script_path, _SPIFINDER_SCRIPT
+        assert spifinder_script_path() == _SPIFINDER_SCRIPT

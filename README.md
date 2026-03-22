@@ -11,6 +11,7 @@ Stage 4:  AMRFinderPlus                 → AMR genes, virulence factors, point 
           Platon                        → plasmid contig classification                         (skippable)
           MEFinder                      → transposons, IS elements, integrons
           EggNOG-mapper                 → GO terms, KEGG pathways, COG categories
+          SPIFinder                     → Salmonella pathogenicity islands (Salmonella only)
 ```
 
 If the genome fails QC thresholds, BactoWise warns you and continues — the scientist makes the final call.
@@ -81,8 +82,8 @@ environments, container images, and all required databases. Just run it.
 
 > **Storage requirements:** The full pipeline requires ~160 GB of total disk space:
 > ~96 GB for all databases (CheckM 1.4 GB, Bakta 4 GB, PGAP 38 GB, Phigaro 1.6 GB,
-> Platon 2.8 GB, EggNOG 48 GB) plus ~60 GB working space during a PGAP run
-> (NCBI quotes ~100 GB total for PGAP data and working space combined).
+> Platon 2.8 GB, EggNOG 48 GB, SPIFinder ~3 MB) plus ~60 GB working space during
+> a PGAP run (NCBI quotes ~100 GB total for PGAP data and working space combined).
 > Databases can be pre-downloaded with `bactowise db download` — see the
 > [User Guide](DOCS.md#2-databases) for details. Large downloads (PGAP, EggNOG)
 > support automatic resume if the connection drops.

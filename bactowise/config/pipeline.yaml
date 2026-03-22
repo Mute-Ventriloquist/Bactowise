@@ -216,5 +216,29 @@ tools:
       # organism: "Escherichia"   # uncomment for point mutation detection
       # threads: 4                # defaults to global threads
 
+  # SPIFinder — Salmonella Pathogenicity Island detection.
+  # Only runs when -n/--organism genus is Salmonella — silently skipped otherwise.
+  # No Docker image exists; tool and database are git-cloned from Bitbucket on
+  # first run to ~/.bactowise/databases/spifinder/.
+  #
+  # Optional params:
+  #   min_cov   : minimum coverage threshold 0–1 (default: 0.60)
+  #   threshold : minimum identity threshold 0–1 (default: 0.95)
+
+  - name: spifinder
+    version: "latest"
+    runtime: conda
+    depends_on: [consensus]
+    conda_env:
+      name: "spifinder_env"
+      channels:
+        - conda-forge
+        - bioconda
+        - defaults
+      dependencies: []
+    params:
+      min_cov: 0.60
+      threshold: 0.95
+
 output_dir: "./results"
 threads: 4
