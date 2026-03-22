@@ -941,7 +941,7 @@ class TestAMRFinderPlusRunner:
         fasta.touch()
 
         with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
-            cmd = runner._build_command(fasta, output_tsv)
+            cmd = runner._build_command(fasta, output_tsv, None)
 
         assert "-n" in cmd
         assert str(fasta.resolve()) in cmd
@@ -960,7 +960,7 @@ class TestAMRFinderPlusRunner:
         output_tsv = tmp_path / "out.tsv"
 
         with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
-            cmd = runner._build_command(fasta, output_tsv)
+            cmd = runner._build_command(fasta, output_tsv, "Escherichia")
 
         assert "--organism" in cmd
         assert "Escherichia" in cmd
@@ -974,7 +974,7 @@ class TestAMRFinderPlusRunner:
         output_tsv = tmp_path / "out.tsv"
 
         with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
-            cmd = runner._build_command(fasta, output_tsv)
+            cmd = runner._build_command(fasta, output_tsv, None)
 
         assert "--organism" not in cmd
 
@@ -1445,3 +1445,173 @@ class TestEggNOGMapperRunner:
             mock_docker.return_value.ping.return_value = True
             pipeline = Pipeline(config, skip_stages={4})
         assert "eggnogmapper" in pipeline.skip
+
+
+# ─── AMRFinderPlus organism auto-detection tests ──────────────────────────────
+
+class TestAMRFinderPlusOrganismDetection:
+    """Tests for the _detect_amrfinder_organism() mapping function."""
+
+    def _detect(self, organism: str):
+        from bactowise.runners.amrfinderplus_runner import _detect_amrfinder_organism
+        return _detect_amrfinder_organism(organism)
+
+    # Exact species-level matches
+    def test_staphylococcus_aureus(self):
+        assert self._detect("Staphylococcus aureus") == "Staphylococcus_aureus"
+
+    def test_streptococcus_pneumoniae(self):
+        assert self._detect("Streptococcus pneumoniae") == "Streptococcus_pneumoniae"
+
+    def test_streptococcus_agalactiae(self):
+        assert self._detect("Streptococcus agalactiae") == "Streptococcus_agalactiae"
+
+    def test_streptococcus_pyogenes(self):
+        assert self._detect("Streptococcus pyogenes") == "Streptococcus_pyogenes"
+
+    def test_neisseria_gonorrhoeae(self):
+        assert self._detect("Neisseria gonorrhoeae") == "Neisseria_gonorrhoeae"
+
+    def test_enterococcus_faecalis(self):
+        assert self._detect("Enterococcus faecalis") == "Enterococcus_faecalis"
+
+    def test_enterococcus_faecium(self):
+        assert self._detect("Enterococcus faecium") == "Enterococcus_faecium"
+
+    def test_acinetobacter_baumannii(self):
+        assert self._detect("Acinetobacter baumannii") == "Acinetobacter_baumannii"
+
+    def test_pseudomonas_aeruginosa(self):
+        assert self._detect("Pseudomonas aeruginosa") == "Pseudomonas_aeruginosa"
+
+    def test_vibrio_cholerae(self):
+        assert self._detect("Vibrio cholerae") == "Vibrio_cholerae"
+
+    def test_clostridioides_difficile(self):
+        assert self._detect("Clostridioides difficile") == "Clostridioides_difficile"
+
+    def test_clostridium_difficile_old_name(self):
+        assert self._detect("Clostridium difficile") == "Clostridioides_difficile"
+
+    # Genus-level fallbacks
+    def test_escherichia_coli(self):
+        assert self._detect("Escherichia coli") == "Escherichia"
+
+    def test_salmonella_enterica(self):
+        assert self._detect("Salmonella enterica") == "Salmonella"
+
+    def test_klebsiella_pneumoniae(self):
+        assert self._detect("Klebsiella pneumoniae") == "Klebsiella"
+
+    def test_campylobacter_jejuni(self):
+        assert self._detect("Campylobacter jejuni") == "Campylobacter"
+
+    def test_neisseria_meningitidis_genus_fallback(self):
+        # Neisseria meningitidis → genus-level Neisseria (not gonorrhoeae)
+        assert self._detect("Neisseria meningitidis") == "Neisseria"
+
+    def test_staphylococcus_epidermidis_no_match(self):
+        # Species not in the list and genus has no genus-level entry
+        assert self._detect("Staphylococcus epidermidis") is None
+
+    # Shigella → Escherichia mapping
+    def test_shigella_maps_to_escherichia(self):
+        assert self._detect("Shigella sonnei") == "Escherichia"
+
+    def test_shigella_genus_only(self):
+        assert self._detect("Shigella") == "Escherichia"
+
+    # Case insensitivity
+    def test_case_insensitive(self):
+        assert self._detect("ESCHERICHIA COLI") == "Escherichia"
+        assert self._detect("staphylococcus aureus") == "Staphylococcus_aureus"
+
+    # No match cases
+    def test_unsupported_organism_returns_none(self):
+        assert self._detect("Mycoplasmoides genitalium") is None
+
+    def test_empty_string_returns_none(self):
+        assert self._detect("") is None
+
+    def test_none_like_empty(self):
+        from bactowise.runners.amrfinderplus_runner import _detect_amrfinder_organism
+        assert _detect_amrfinder_organism("") is None
+
+    # Integration: _resolve_organism respects pipeline.yaml override
+    def test_autodetect_overrides_pipeline_yaml_organism(self, tmp_path):
+        from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
+        tool = ToolConfig(
+            name="amrfinderplus", version="latest", runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "amrfinderplus_env", "dependencies": []},
+            params={"plus": True, "organism": "Salmonella"},
+        )
+        runner = AMRFinderPlusRunner(tool, tmp_path, organism="Escherichia coli")
+        # -n "Escherichia coli" auto-detects to Escherichia, which overrides
+        # the pipeline.yaml "Salmonella" param
+        assert runner._resolve_organism() == "Escherichia"
+
+    def test_pipeline_yaml_used_when_autodetect_has_no_match(self, tmp_path):
+        from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
+        tool = ToolConfig(
+            name="amrfinderplus", version="latest", runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "amrfinderplus_env", "dependencies": []},
+            params={"plus": True, "organism": "Salmonella"},
+        )
+        runner = AMRFinderPlusRunner(tool, tmp_path, organism="Mycoplasmoides genitalium")
+        # -n doesn't match anything, so pipeline.yaml fallback is used
+        assert runner._resolve_organism() == "Salmonella"
+
+    def test_autodetect_used_when_no_yaml_override(self, tmp_path):
+        from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
+        tool = ToolConfig(
+            name="amrfinderplus", version="latest", runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "amrfinderplus_env", "dependencies": []},
+            params={"plus": True},
+        )
+        runner = AMRFinderPlusRunner(tool, tmp_path, organism="Staphylococcus aureus")
+        assert runner._resolve_organism() == "Staphylococcus_aureus"
+
+    def test_resolve_none_for_unsupported_organism(self, tmp_path):
+        from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
+        tool = ToolConfig(
+            name="amrfinderplus", version="latest", runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "amrfinderplus_env", "dependencies": []},
+            params={"plus": True},
+        )
+        runner = AMRFinderPlusRunner(tool, tmp_path, organism="Mycoplasmoides genitalium")
+        assert runner._resolve_organism() is None
+
+    def test_build_command_includes_organism_when_matched(self, tmp_path):
+        from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
+        tool = ToolConfig(
+            name="amrfinderplus", version="latest", runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "amrfinderplus_env", "dependencies": []},
+            params={"plus": True},
+        )
+        runner = AMRFinderPlusRunner(tool, tmp_path, organism="Escherichia coli", global_threads=4)
+        fasta = tmp_path / "genome.fasta"
+        output_tsv = tmp_path / "out.tsv"
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta, output_tsv, "Escherichia")
+        assert "--organism" in cmd
+        assert "Escherichia" in cmd
+
+    def test_build_command_no_organism_when_unmatched(self, tmp_path):
+        from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
+        tool = ToolConfig(
+            name="amrfinderplus", version="latest", runtime="conda",
+            depends_on=["consensus"],
+            conda_env={"name": "amrfinderplus_env", "dependencies": []},
+            params={"plus": True},
+        )
+        runner = AMRFinderPlusRunner(tool, tmp_path, organism="Mycoplasmoides genitalium", global_threads=4)
+        fasta = tmp_path / "genome.fasta"
+        output_tsv = tmp_path / "out.tsv"
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._build_command(fasta, output_tsv, None)
+        assert "--organism" not in cmd
