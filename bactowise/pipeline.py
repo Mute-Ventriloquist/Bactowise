@@ -312,13 +312,33 @@ class Pipeline:
                         errors[tool_name] = str(e)
                         console.print(f"\n[error]✗ [{tool_name}] Failed: {e}[/error]")
 
+        # Build a map of tool_name → stage_number for the summary label.
+        # We need the full stage ordering including skipped tools, so we
+        # re-run the topological sort without the skip filter.
+        tool_configs  = {t.name: t for t in self.config.tools}
+        all_tools     = list(tool_configs.keys())
+        completed_all: set[str] = set()
+        remaining_all = list(all_tools)
+        stage_num_map: dict[str, int] = {}
+        stage_counter = 1
+        while remaining_all:
+            ready = [n for n in remaining_all
+                     if all(d in completed_all for d in tool_configs[n].depends_on)]
+            for n in ready:
+                stage_num_map[n] = stage_counter
+            completed_all.update(ready)
+            remaining_all = [n for n in remaining_all if n not in ready]
+            if ready:
+                stage_counter += 1
+
         # Summary
         console.print()
         console.rule("[bold white]  Pipeline Summary  [/bold white]", style="bright_blue")
         console.print()
 
         for tool_name in sorted(self.skip):
-            console.print(f"  [skip]⊘  {tool_name:15s} → skipped (stage 1)[/skip]")
+            stage_label = stage_num_map.get(tool_name, "?")
+            console.print(f"  [skip]⊘  {tool_name:15s} → skipped (stage {stage_label})[/skip]")
 
         for tool_name in sorted(self.gff_files):
             console.print(f"  [bypass]↩  {tool_name:15s} → GFF provided[/bypass]")

@@ -117,26 +117,7 @@ bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
 
 ---
 
-## Stage 4 — Supplementary Annotations
-
-Stage 4 runs after the Consensus Engine and provides five independent analyses
-in parallel. Skip the entire stage with `--skip stage_4`.
-
-| Tool | What it does | Input | Database |
-|---|---|---|---|
-| **AMRFinderPlus** | AMR genes, virulence factors, point mutations | genome FASTA | auto-managed inside conda env |
-| **Phigaro** | Prophage region detection | genome FASTA | `~/.bactowise/databases/phigaro/` (~1.5 GB) |
-| **Platon** | Plasmid contig classification | genome FASTA | `~/.bactowise/databases/platon/` (~2.8 GB) |
-| **MEFinder** | Transposons, IS elements, integrons | genome FASTA | bundled with pip package |
-| **EggNOG-mapper** | GO terms, KEGG pathways, COG categories | consensus `GENE.faa` | `~/.bactowise/databases/eggnog/` (~20 GB) |
-
-EggNOG-mapper is the only stage 4 tool that uses a stage 3 output — it annotates
-every protein in the consensus FASTA to provide biological context for each
-consensus gene.
-
----
-
 ## Further reading
 
 - **[User Guide](DOCS.md#user-guide)** — databases, QC output, stage 4 tool details, flags, troubleshooting
-- **[Developer Guide](DOCS.md#developer-guide)** — pipeline.yaml field reference, local modifications, how to add a new tool
+- **[Developer Guide](DOCS.md#developer-guide)** — pipeline.yaml field reference, stage 4 tool table, local modifications, how to add a new tool

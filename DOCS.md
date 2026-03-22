@@ -937,6 +937,21 @@ runs. Unknown fields are rejected with a clear error message.
 - Every name listed in `depends_on` must exist in the `tools` list
 - At least one tool must be defined
 
+### Stage 4 tool reference
+
+| Tool | What it does | Input | Database | Location |
+|---|---|---|---|---|
+| **AMRFinderPlus** | AMR genes, virulence factors, point mutations | genome FASTA | auto-managed inside `amrfinderplus_env` | conda env internal |
+| **Phigaro** | Prophage region detection | genome FASTA | pVOG HMM profiles (~1.6 GB) | `~/.bactowise/databases/phigaro/` |
+| **Platon** | Plasmid contig classification and characterisation | genome FASTA | RDS database (~2.8 GB) | `~/.bactowise/databases/platon/db/` |
+| **MEFinder** | Transposons, IS elements, integrons | genome FASTA | MGEdb, bundled with pip package | `mefinder_env` internal |
+| **EggNOG-mapper** | GO terms, KEGG pathways, COG categories | consensus `GENE.faa` (stage 3) | eggNOG DIAMOND + SQLite (~48 GB) | `~/.bactowise/databases/eggnog/` |
+
+EggNOG-mapper is the only stage 4 tool that uses a stage 3 output — it annotates
+every protein in the consensus FASTA to provide biological context for each
+consensus gene. See [Section 8](#8-stage-4--supplementary-annotations) in the
+User Guide for full per-tool documentation.
+
 ---
 
 ---
