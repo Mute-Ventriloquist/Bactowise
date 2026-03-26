@@ -284,6 +284,29 @@ bactowise run -f genome1.fasta -n "Escherichia coli"        -o results/ecoli
 bactowise run -f genome2.fasta -n "Staphylococcus aureus"   -o results/saureus
 ```
 
+### Controlling thread count
+
+Use `--threads` to set the number of CPU threads used by all tools. This is
+the recommended way to adjust parallelism — it overrides the default of 4
+set in `pipeline.yaml` without modifying the config file:
+
+```bash
+bactowise run -f genome.fasta -n "Escherichia coli" --threads 8
+bactowise run -f genome.fasta -n "Escherichia coli" --threads 16
+```
+
+The resolved thread count is shown at startup:
+
+```
+Threads  : 8  (--threads override)
+```
+
+When `--threads` is not passed, the value from `pipeline.yaml` is used
+(default: 4). Individual tools can still be pinned to a specific thread
+count via their `params` block in the config — see
+[Changing the number of threads](DOCS.md#changing-the-number-of-threads)
+in the Developer Guide.
+
 ### Output layout
 
 With all tools active (CheckM + Prokka + Bakta + PGAP), using the default
@@ -975,6 +998,7 @@ all available options.
 | `SPIFinder: Failed to clone` | Ensure `git` is on your PATH (`module load git` on HPC) and Bitbucket is reachable. Then re-run `bactowise db download --spifinder`. |
 | `SPIFinder not found` / missing script | Run `bactowise db download --spifinder` to re-clone. If it persists, delete the directory and retry: `rm -rf ~/.bactowise/databases/spifinder && bactowise db download --spifinder` |
 | SPIFinder skipped unexpectedly | SPIFinder only runs when genus is Salmonella. Check that `-n` starts with `Salmonella` (e.g. `-n "Salmonella enterica"`). |
+| AMRFinderPlus exits with code 134 / "terminate called recursively" | This is a known blastn threading bug in the bioconda build. BactoWise always runs AMRFinderPlus with `-t 1` to avoid it — if you see this error on an older install, reinstall: `conda env remove -n amrfinderplus_env -y` and rerun. |
 
 ---
 
@@ -991,7 +1015,7 @@ runs. Unknown fields are rejected with a clear error message.
 |---|---|---|---|
 | `tools` | list | required | Ordered list of tool definitions |
 | `output_dir` | path | `./results` | Root directory for all tool outputs |
-| `threads` | int | `4` | Global thread count (tools may override this in their `params`) |
+| `threads` | int | `4` | Global thread count — used by all tools unless overridden per-tool via `params.threads`. Can be overridden at runtime with `bactowise run --threads N`. |
 
 ### Per-tool fields
 
@@ -1066,23 +1090,45 @@ whether annotation proceeds.
 
 ### Changing the number of threads
 
-Each tool picks up its thread count from its own `params` block. To speed
-up a run on a machine with more cores, increase `threads` (or `cpus` for
-Prokka) under each tool:
+The easiest way to change the thread count for all tools at once is the
+`--threads` flag on `bactowise run`:
+
+```bash
+bactowise run -f genome.fasta -n "Escherichia coli" --threads 8
+```
+
+This overrides the `threads` value in `pipeline.yaml` for the duration of
+that run without modifying the config file. The resolved thread count and
+its source are shown in the startup banner:
+
+```
+Threads  : 8  (--threads override)
+Threads  : 4  (pipeline.yaml default)
+```
+
+**Priority order for thread count:**
+1. `--threads N` on the command line — overrides everything
+2. `threads: N` in `pipeline.yaml` — used when `--threads` is not passed (default: 4)
+3. Per-tool `params.threads` in `pipeline.yaml` — overrides the global value for that tool only
+
+**Per-tool overrides** remain available for cases where one tool needs a
+different thread count — for example, capping EggNOG-mapper to avoid
+excessive memory use on a shared node:
 
 ```yaml
+- name: eggnogmapper
+  params:
+    threads: 2   # run with fewer threads regardless of --threads or global default
+
 - name: checkm
   params:
-    threads: 8
-
-- name: prokka
-  params:
-    cpus: 8
-
-- name: bakta
-  params:
-    threads: 8
+    threads: 8   # always use 8 for CheckM even if global is lower
 ```
+
+**Note on AMRFinderPlus:** AMRFinderPlus is always run with a single thread
+regardless of `--threads` or `pipeline.yaml`. The bioconda build has a known
+threading bug that causes blastn to crash when `-t > 1`. The tool is fast
+enough single-threaded for typical bacterial genomes.
 
 ### Specifying genus and species for Prokka
 

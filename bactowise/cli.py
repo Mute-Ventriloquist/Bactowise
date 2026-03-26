@@ -37,7 +37,12 @@ from bactowise.utils.db_manager import (
 
 app = typer.Typer(
     name="bactowise",
-    help="Bacterial genome QC and annotation — one command.",
+    help=(
+        "Complete bacterial genome characterisation — multi-tool annotation, "
+        "AMR profiling, and functional analysis, automated."
+    ),
+    epilog="Run [bold]bactowise COMMAND --help[/bold] for detailed usage of any command.",
+    rich_markup_mode="rich",
     add_completion=False,
 )
 

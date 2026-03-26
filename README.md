@@ -1,124 +1,116 @@
 # BactoWise
 
-Assess bacterial genome quality and annotate genes — one command, one config file.
+**Complete bacterial genome characterisation — multi-tool annotation, AMR profiling, and functional analysis, automated.**
+
+BactoWise runs a full genome analysis pipeline from a single FASTA file. It handles conda environments, Singularity containers, and database downloads automatically. You provide a genome and an organism name — BactoWise does the rest.
 
 ```
-Stage 1:  CheckM                        → completeness & contamination check (skippable)
-Stage 2:  Prokka + Bakta + PGAP         → gene annotation (run in parallel)
-Stage 3:  Consensus Engine              → merge annotations into a single source of truth
-Stage 4:  AMRFinderPlus                 → AMR genes, virulence factors, point mutations        ↑ all run
-          Phigaro                       → prophage region detection                             in parallel
-          Platon                        → plasmid contig classification                         (skippable)
-          MEFinder                      → transposons, IS elements, integrons
-          EggNOG-mapper                 → GO terms, KEGG pathways, COG categories
-          SPIFinder                     → Salmonella pathogenicity islands (Salmonella only)
+Stage 1  CheckM                                  QC — completeness & contamination
+Stage 2  Prokka + Bakta + PGAP                   Gene annotation (parallel)
+Stage 3  Consensus Engine                         Single authoritative annotation
+Stage 4  AMRFinderPlus · Phigaro · Platon         AMR, prophages, plasmids,
+         MEFinder · EggNOG-mapper · SPIFinder*    MGEs, GO/KEGG, SPIs
 ```
-
-If the genome fails QC thresholds, BactoWise warns you and continues — the scientist makes the final call.
+*SPIFinder runs only for Salmonella genomes.
 
 ---
 
-## Setup
+## Prerequisites
 
-### 1. Install Singularity or Apptainer
+- **Conda** (Miniconda or Mambaforge)
+- **Singularity or Apptainer** — required for Bakta and PGAP
 
-Bakta and PGAP run inside Singularity containers. Apptainer is the actively
-maintained community fork and is recommended for new installs. The two are
-fully interchangeable — BactoWise detects whichever is available on your PATH.
-
-**On an HPC cluster:**
 ```bash
+# HPC cluster
 module load singularity
-# or: module load apptainer
+
+# Local workstation (Ubuntu / WSL2)
+sudo add-apt-repository -y ppa:apptainer/ppa && sudo apt update && sudo apt install -y apptainer
 ```
 
-**On a local workstation (WSL2, Linux):**
-```bash
-sudo add-apt-repository -y ppa:apptainer/ppa
-sudo apt update
-sudo apt install -y apptainer
-```
+---
 
-Verify it works:
-```bash
-apptainer exec docker://alpine cat /etc/alpine-release
-```
-
-### 2. Install BactoWise
+## Install
 
 ```bash
 conda build conda_recipe/ -c bioconda -c conda-forge
 conda install --use-local bactowise -c bioconda -c conda-forge
 ```
 
-> **WSL users:** If `conda build` fails, see the [User Guide](DOCS.md#1-installation).
-
-> **Note — testing a fresh install:** To verify the package in a clean
-> environment (recommended when iterating on the code), wipe and reinstall
-> rather than updating in-place:
-> ```bash
-> conda build conda_recipe/ -c bioconda -c conda-forge
->
-> conda env remove -n bactowise_dev -y
-> conda create -n bactowise_dev python=3.12 -y
-> conda activate bactowise_dev
-> conda install --use-local bactowise -c bioconda -c conda-forge
-> ```
+> WSL users: if `conda build` fails with a syntax error, see [Installation](DOCS.md#1-installation).
 
 ---
 
-## Running
+## Quick start
+
+**1. Download databases** (~96 GB total — do this before your first run):
 
 ```bash
-bactowise run -f genome.fasta -n "Genus species"
+bactowise db download            # CheckM + Bakta (~5 GB, fast)
+bactowise db download --pgap     # PGAP supplemental data (~38 GB)
+bactowise db download --eggnog   # EggNOG-mapper (~48 GB, resumable)
 ```
 
-The `-n` flag is the organism name as a valid NCBI Taxonomy string
-(e.g. `"Mycoplasmoides genitalium"`, `"Escherichia coli"`). It is passed to
-PGAP (required), and also improves labelling in Prokka and Bakta.
-
-On first run, BactoWise automatically sets up everything it needs — conda
-environments, container images, and all required databases. Just run it.
-
-> **Storage requirements:** The full pipeline requires ~160 GB of total disk space:
-> ~96 GB for all databases (CheckM 1.4 GB, Bakta 4 GB, PGAP 38 GB, Phigaro 1.6 GB,
-> Platon 2.8 GB, EggNOG 48 GB, SPIFinder ~3 MB) plus ~60 GB working space during
-> a PGAP run (NCBI quotes ~100 GB total for PGAP data and working space combined).
-> Databases can be pre-downloaded with `bactowise db download` — see the
-> [User Guide](DOCS.md#2-databases) for details. Large downloads (PGAP, EggNOG)
-> support automatic resume if the connection drops.
-
-Results land in `./results/` by default. Use `-o` to write to a different location:
+**2. Get a test genome** (*M. genitalium* — 580 kb, annotates in minutes):
 
 ```bash
-bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" -o /scratch/my_run
+efetch -db nucleotide -id NC_000908.2 -format fasta > mgenitalium.fasta
 ```
 
-**Skip the QC stage** (stage 1) or **all supplementary annotations** (stage 4):
+**3. Run:**
+
 ```bash
-bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_1
-bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_4
-bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_1 --skip stage_4
+bactowise run -f mgenitalium.fasta -n "Mycoplasmoides genitalium"
 ```
 
-**Bypass annotation with pre-computed GFF files:**
+**4. Results** land in `./results/` — one subdirectory per tool.
 
-Provide a GFF for any subset of annotation tools — the rest run normally:
+---
+
+## Common options
+
+| Flag | Description |
+|---|---|
+| `-f` / `--fasta` | Input genome (required) |
+| `-n` / `--organism` | NCBI Taxonomy name, e.g. `"Salmonella enterica"` (required) |
+| `-o` / `--output` | Output directory (default: `./results`) |
+| `--threads N` | CPU threads for all tools (default: 4 from pipeline.yaml) |
+| `--skip stage_1` | Skip QC (CheckM) |
+| `--skip stage_4` | Skip supplementary annotations |
+| `--gff tool:path` | Provide pre-computed GFF for any annotation tool |
+
 ```bash
-# Bypass all three
-bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
-  --gff bakta:/path/to/bakta.gff3 \
-  --gff prokka:/path/to/prokka.gff \
-  --gff pgap:/path/to/pgap.gff
+# Skip QC, use 8 threads, write to a custom output directory
+bactowise run -f genome.fasta -n "Escherichia coli" --skip stage_1 --threads 8 -o /scratch/ecoli
 
-# Bypass only Prokka — Bakta and PGAP still run
-bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
-  --gff prokka:/path/to/prokka.gff
+# Provide a pre-computed Bakta annotation, run Prokka and PGAP fresh
+bactowise run -f genome.fasta -n "Staphylococcus aureus" --gff bakta:/prev/run/bakta.gff3
 ```
 
 ---
 
-## Further reading
+## Storage
 
-- **[User Guide](DOCS.md#user-guide)** — databases, QC output, stage 4 tool details, flags, troubleshooting
-- **[Developer Guide](DOCS.md#developer-guide)** — pipeline.yaml field reference, stage 4 tool table, local modifications, how to add a new tool
+| Database | Size | Command |
+|---|---|---|
+| CheckM | ~1.4 GB | `bactowise db download --checkm` |
+| Bakta | ~4 GB | `bactowise db download --bakta` |
+| PGAP | ~38 GB | `bactowise db download --pgap` |
+| Platon | ~2.8 GB | `bactowise db download --platon` |
+| EggNOG-mapper | ~48 GB | `bactowise db download --eggnog` |
+| SPIFinder | ~3 MB | `bactowise db download --spifinder` |
+| **Total** | **~96 GB** | `bactowise db download` |
+
+PGAP also requires ~60 GB of working space during a run. Plan for ~160 GB of free disk before running the full pipeline.
+
+Check database status at any time:
+```bash
+bactowise db status
+```
+
+---
+
+## Documentation
+
+- **[User Guide](DOCS.md#user-guide)** — detailed flags, QC output, per-tool documentation, troubleshooting
+- **[Developer Guide](DOCS.md#developer-guide)** — pipeline.yaml reference, adding new tools, modifying defaults
