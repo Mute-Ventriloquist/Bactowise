@@ -235,6 +235,9 @@ class AMRFinderPlusRunner(CondaToolRunner):
 
         self._cprint(f"[label]Nucleotide:[/label] [muted]{fasta}[/muted]")
         self._cprint(f"[label]Output:[/label]     [muted]{output_tsv}[/muted]")
+        self._cprint(
+            f"[label]Threads:[/label]    [muted]1 (hardcapped — blastn threading bug)[/muted]"
+        )
         if source == "autodetect":
             self._cprint(
                 f"[label]Point mutations:[/label] [success]enabled[/success] "
@@ -307,14 +310,19 @@ class AMRFinderPlusRunner(CondaToolRunner):
         Build the amrfinder command in nucleotide-only mode.
 
             amrfinder -n <fasta> -o <tsv> -t <threads> [--plus] [--organism <taxon>]
+
+        Note: AMRFinderPlus is hardcapped to 1 thread regardless of global_threads.
+        The bioconda build has a known threading bug where blastn crashes with
+        "terminate called recursively / core dumped" when -t > 1. The tool is fast
+        enough single-threaded for typical bacterial genomes.
+        See: https://github.com/ncbi/amr/issues/145
         """
-        threads = self.config.params.get("threads", self.global_threads)
-        plus    = self.config.params.get("plus", True)
+        plus = self.config.params.get("plus", True)
 
         tool_args = [
             "-n", str(fasta.resolve()),
             "-o", str(output_tsv),
-            "-t", str(threads),
+            "-t", "1",   # hardcapped — see note above
         ]
 
         if plus:

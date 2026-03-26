@@ -950,6 +950,8 @@ class TestAMRFinderPlusRunner:
         assert str(output_tsv) in cmd
         assert "--plus" in cmd
         assert "-t" in cmd
+        # Always hardcapped to 1 regardless of global_threads — blastn threading bug
+        assert cmd[cmd.index("-t") + 1] == "1"
 
     def test_build_command_with_organism(self, tmp_path):
         from bactowise.runners.amrfinderplus_runner import AMRFinderPlusRunner
