@@ -1762,3 +1762,65 @@ class TestSPIFinderRunner:
     def test_spifinder_script_path_returns_path(self):
         from bactowise.utils.db_manager import spifinder_script_path, _SPIFINDER_SCRIPT
         assert spifinder_script_path() == _SPIFINDER_SCRIPT
+
+
+# ─── --threads override tests ─────────────────────────────────────────────────
+
+class TestThreadsOverride:
+    """Tests for the --threads CLI override flowing through to runners."""
+
+    def _make_config(self, tmp_path) -> "PipelineConfig":
+        return PipelineConfig(**{
+            "tools": [
+                {"name": "prokka", "version": "1.14.6", "runtime": "conda",
+                 "depends_on": []},
+            ],
+            "output_dir": str(tmp_path),
+            "threads": 4,
+        })
+
+    def test_pipeline_uses_config_threads_by_default(self, tmp_path):
+        config = self._make_config(tmp_path)
+        assert config.threads == 4
+        pipeline = Pipeline(config, organism="Escherichia coli")
+        assert pipeline.runners["prokka"].global_threads == 4
+
+    def test_model_copy_overrides_threads(self, tmp_path):
+        config = self._make_config(tmp_path)
+        overridden = config.model_copy(update={"threads": 16})
+        assert overridden.threads == 16
+        # original untouched
+        assert config.threads == 4
+
+    def test_pipeline_passes_overridden_threads_to_runners(self, tmp_path):
+        config = self._make_config(tmp_path)
+        overridden = config.model_copy(update={"threads": 16})
+        pipeline = Pipeline(overridden, organism="Escherichia coli")
+        assert pipeline.runners["prokka"].global_threads == 16
+
+    def test_threads_one_is_valid(self, tmp_path):
+        config = self._make_config(tmp_path)
+        overridden = config.model_copy(update={"threads": 1})
+        pipeline = Pipeline(overridden, organism="Escherichia coli")
+        assert pipeline.runners["prokka"].global_threads == 1
+
+    def test_per_tool_params_still_override_global(self, tmp_path):
+        """A per-tool params.threads should still take priority over global_threads."""
+        config = PipelineConfig(**{
+            "tools": [
+                {"name": "prokka", "version": "1.14.6", "runtime": "conda",
+                 "depends_on": [], "params": {"cpus": 2}},
+            ],
+            "output_dir": str(tmp_path),
+            "threads": 16,
+        })
+        pipeline = Pipeline(config, organism="Escherichia coli")
+        runner = pipeline.runners["prokka"]
+        # global_threads is 16 but the params override means prokka gets --cpus 2
+        fasta = tmp_path / "genome.fasta"
+        fasta.touch()
+        with patch.object(runner, "_find_conda_binary", return_value="/usr/bin/conda"):
+            cmd = runner._prokka_command(fasta)
+        assert "--cpus" in cmd
+        cpus_val = cmd[cmd.index("--cpus") + 1]
+        assert cpus_val == "2"

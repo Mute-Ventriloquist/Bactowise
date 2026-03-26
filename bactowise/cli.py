@@ -324,6 +324,14 @@ def run(
             "Repeatable. Any subset of annotation tools may be bypassed."
         ),
     ),
+    threads: int = typer.Option(
+        None, "--threads",
+        help=(
+            "Number of CPU threads to use for all tools. "
+            "Overrides the 'threads' value in pipeline.yaml. "
+            "When omitted, defaults to the pipeline.yaml value (4 by default)."
+        ),
+    ),
 ):
     """Run QC and annotation on a genome.
 
@@ -364,6 +372,7 @@ def run(
     Examples:
       bactowise run -f genome.fasta -n "Mycoplasmoides genitalium"
       bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" -o /scratch/my_run
+      bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --threads 8
       bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_1
       bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" --skip stage_1 --gff pgap:/path/to/pgap.gff
     """
@@ -429,6 +438,25 @@ def run(
             pipeline_config = pipeline_config.model_copy(
                 update={"output_dir": output_dir.resolve()}
             )
+
+        # Override threads if the user supplied --threads.
+        # When omitted (None), the pipeline.yaml value is used as-is.
+        if threads is not None:
+            if threads < 1:
+                console.print(
+                    f"\n[user_error]✗ --threads must be at least 1 (got {threads})[/user_error]"
+                )
+                raise typer.Exit(code=1)
+            pipeline_config = pipeline_config.model_copy(
+                update={"threads": threads}
+            )
+
+        effective_threads = pipeline_config.threads
+        console.print(
+            f"  [label]Threads[/label]  : [bold]{effective_threads}[/bold]"
+            + (" [muted](--threads override)[/muted]" if threads is not None else " [muted](pipeline.yaml default)[/muted]")
+        )
+        console.print()
 
         pipeline = Pipeline(
             pipeline_config,
