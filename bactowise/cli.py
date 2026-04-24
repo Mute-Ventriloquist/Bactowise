@@ -65,18 +65,28 @@ def _normalize_bakta_database_config(config):
         if tool.name != "bakta" or tool.database is None:
             continue
 
+        tool_updates = {}
         db_updates = {}
         if tool.database.type == "light":
             db_updates["type"] = "full"
         if tool.database.path.name in {"db-light", "db-full"}:
             db_updates["path"] = tool.database.path.with_name("db")
+        if tool.runtime == "singularity":
+            tool_updates["runtime"] = "conda"
+            tool_updates["conda_env"] = tool.conda_env or {
+                "name": "bakta_env",
+                "channels": ["conda-forge", "bioconda", "defaults"],
+                "dependencies": [],
+            }
 
-        if not db_updates:
+        if not db_updates and not tool_updates:
             continue
 
         normalized = True
+        if db_updates:
+            tool_updates["database"] = tool.database.model_copy(update=db_updates)
         config.tools[idx] = tool.model_copy(
-            update={"database": tool.database.model_copy(update=db_updates)}
+            update=tool_updates
         )
 
     return config, normalized
@@ -95,7 +105,7 @@ def db_download(
         help="Re-download even if already present.",
     ),
 ):
-    """Download all required databases, one-time (~161 GB total on disk).
+    """Download all required databases, one-time (~163 GB total on disk).
 
     \b
     Stores all databases under ~/.bactowise/databases/:
@@ -386,8 +396,9 @@ def run(
     Check validity at: https://www.ncbi.nlm.nih.gov/taxonomy
 
     \b
-    On first run, any missing conda environments and container images are
-    created automatically. Databases are downloaded if not already present.
+    On first run, any missing conda environments are created automatically.
+    PGAP also prepares its required container runtime dependencies as needed.
+    Databases are downloaded if not already present.
 
     \b
     Skip stages with --skip. Skippable: stage_1 (QC), stage_4 (supplementary).

@@ -59,9 +59,15 @@ tools:
 
   - name: bakta
     version: "1.12.0"
-    runtime: singularity
+    runtime: conda
     depends_on: [checkm]
-    image: "oschwengers/bakta:v1.12.0"
+    conda_env:
+      name: "bakta_env"
+      channels:
+        - conda-forge
+        - bioconda
+        - defaults
+      dependencies: []
     database:
       path: "~/.bactowise/databases/bakta/db"
       type: full
