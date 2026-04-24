@@ -104,11 +104,6 @@ bactowise db download --bakta
 Downloaded to `~/.bactowise/databases/bakta/db-light/`.
 The Bakta Singularity image (~500 MB) is pulled automatically during preflight — no separate step needed.
 
-**Both CheckM and Bakta together:**
-```bash
-bactowise db download
-```
-
 **PGAP supplemental data (~38 GB):**
 ```bash
 bactowise db download --pgap
@@ -162,6 +157,12 @@ tracked in `~/.bactowise/databases/`:
 - AMRFinderPlus: downloaded by `amrfinder -u` into `amrfinderplus_env` during preflight
 - MEFinder: bundled with the pip package inside `mefinder_env`
 
+### Download all databases
+
+```bash
+bactowise db download
+```
+
 ### Download individual databases
 
 ```bash
@@ -177,9 +178,12 @@ bactowise db download --spifinder  # SPIFinder only (~3 MB, git clone)
 
 ```bash
 bactowise db download --force-db-download               # all managed databases
-bactowise db download --eggnog --force-db-download      # EggNOG only
-bactowise db download --platon --force-db-download      # Platon only
-bactowise db download --spifinder --force-db-download   # SPIFinder only (re-clones)
+bactowise db download --checkm --force-db-download
+bactowise db download --bakta --force-db-download
+bactowise db download --pgap --force-db-download
+bactowise db download --platon --force-db-download
+bactowise db download --eggnog --force-db-download
+bactowise db download --spifinder --force-db-download   # re-clones from Bitbucket
 ```
 
 ### Check database status
@@ -981,7 +985,7 @@ all available options.
 | `prokka not found on PATH` | BactoWise creates `prokka_env` automatically on first run — check preflight output |
 | `bactowise: command not found` | Run `conda activate <your-env>` first |
 | CheckM fails silently | Check `results/checkm/logs/checkm.log` |
-| Download interrupted | Re-run the same `bactowise db download` command — partial downloads resume automatically |
+| Download interrupted | Re-run the same `bactowise db download --<tool>` command — partial downloads resume automatically |
 | `pgap.py not found` | Run `bactowise db download --pgap` — downloads pgap.py and supplemental data automatically |
 | `PGAP supplemental data not found` | Run `bactowise db download --pgap` (~30 GB). Use `--skip pgap` to run without it. |
 | PGAP fails with cgroups error | VM/HPC kernel issue — handled automatically. If it persists, check `results/pgap/run_<timestamp>/cwltool.log` |

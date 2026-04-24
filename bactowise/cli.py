@@ -92,6 +92,9 @@ def db_download(
     \b
     Examples:
       bactowise db download
+      bactowise db download --checkm
+      bactowise db download --bakta
+      bactowise db download --pgap
       bactowise db download --eggnog --force-db-download
       bactowise db download --spifinder --force-db-download
     """

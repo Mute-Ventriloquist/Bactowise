@@ -85,7 +85,7 @@ bactowise run -f genome.fasta -n "Staphylococcus aureus" --gff bakta:/prev/run/b
 | Platon | ~2.8 GB | `bactowise db download --platon` |
 | EggNOG-mapper | ~48 GB | `bactowise db download --eggnog` |
 | SPIFinder | ~3 MB | `bactowise db download --spifinder` |
-| **Total** | **~96 GB** | `bactowise db download` |
+| **Total** | **~96 GB** | run each command above |
 
 PGAP also requires ~60 GB of working space during a run. Plan for ~160 GB of free disk before running the full pipeline.
 
