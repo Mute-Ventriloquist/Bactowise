@@ -19,7 +19,6 @@ from bactowise.cli import _normalize_bakta_database_config
 from bactowise.utils.config_loader import load_config
 from bactowise.utils.db_manager import (
     _bakta_db_conda_cmd,
-    _bakta_db_download_attempts,
     _container_runtime_env,
     bakta_db_path,
 )
@@ -113,13 +112,9 @@ class TestDatabaseConfig:
         normalized, changed = _normalize_bakta_database_config(cfg)
 
         assert changed is True
-        bakta_tool = normalized.tools[0]
-        assert bakta_tool.database is not None
-        assert bakta_tool.database.type == "full"
-        assert bakta_tool.database.path == (tmp_path / "bakta" / "db").resolve()
-        assert bakta_tool.runtime == "conda"
-        assert bakta_tool.conda_env is not None
-        assert bakta_tool.conda_env.name == "bakta_env"
+        assert normalized.tools[0].database is not None
+        assert normalized.tools[0].database.type == "full"
+        assert normalized.tools[0].database.path == (tmp_path / "bakta" / "db").resolve()
 
 
 # ─── Config loader tests ──────────────────────────────────────────────────────
@@ -180,20 +175,6 @@ class TestRunnerFactory:
         # SingularityToolRunner has no external connection in __init__ — no mock needed
         runner = RunnerFactory.create(tool, tmp_path)
         assert isinstance(runner, SingularityToolRunner)
-
-    def test_bakta_conda_runtime_returns_conda_runner(self, tmp_path):
-        from bactowise.runners.conda_runner import CondaToolRunner
-        db_dir = tmp_path / "bakta" / "db"
-        db_dir.mkdir(parents=True)
-        tool = ToolConfig(
-            name="bakta",
-            version="1.12.0",
-            runtime="conda",
-            conda_env={"name": "bakta_env"},
-            database={"path": str(db_dir), "type": "full"},
-        )
-        runner = RunnerFactory.create(tool, tmp_path, organism="Escherichia coli")
-        assert isinstance(runner, CondaToolRunner)
 
     def test_pgap_name_returns_pgap_runner(self, tmp_path):
         from bactowise.runners.pgap_runner import PGAPRunner
@@ -405,68 +386,12 @@ class TestGlobalThreadsFallback:
     def test_bakta_db_path_uses_full_database_subdir(self, tmp_path):
         assert bakta_db_path(tmp_path) == tmp_path / "bakta" / "db"
 
-    def test_bakta_conda_command_uses_db_and_output(self, tmp_path):
-        from bactowise.runners.conda_runner import CondaToolRunner
-        db_dir = tmp_path / "bakta" / "db"
-        db_dir.mkdir(parents=True)
-        tool = ToolConfig(
-            name="bakta",
-            version="1.12.0",
-            runtime="conda",
-            conda_env={"name": "bakta_env"},
-            database={"path": str(db_dir), "type": "full"},
-            params={"min-contig-length": 200},
-        )
-        runner = CondaToolRunner(tool, tmp_path, organism="Mycoplasmoides genitalium", global_threads=10)
-        fasta = tmp_path / "genome.fasta"
-        fasta.touch()
-        cmd = runner._bakta_command(fasta)
-        assert cmd[:5] == [runner._find_conda_binary(), "run", "--no-capture-output", "-n", "bakta_env"]
-        assert "--db" in cmd
-        assert str(db_dir.resolve()) in cmd
-        assert "--output" in cmd
-        assert str(tmp_path) in cmd
-        assert cmd[cmd.index("--threads") + 1] == "10"
-
-    def test_bakta_conda_command_respects_explicit_threads(self, tmp_path):
-        from bactowise.runners.conda_runner import CondaToolRunner
-        db_dir = tmp_path / "bakta" / "db"
-        db_dir.mkdir(parents=True)
-        tool = ToolConfig(
-            name="bakta",
-            version="1.12.0",
-            runtime="conda",
-            conda_env={"name": "bakta_env"},
-            database={"path": str(db_dir), "type": "full"},
-            params={"threads": 3},
-        )
-        runner = CondaToolRunner(tool, tmp_path, global_threads=10)
-        fasta = tmp_path / "genome.fasta"
-        fasta.touch()
-        cmd = runner._bakta_command(fasta)
-        assert cmd[cmd.index("--threads") + 1] == "3"
-
     def test_bakta_db_conda_cmd_uses_managed_env(self, tmp_path):
         cmd = _bakta_db_conda_cmd("/usr/bin/conda", tmp_path / "bakta")
         assert cmd[:4] == ["/usr/bin/conda", "run", "--no-capture-output", "-p"]
         assert "bakta_db" in cmd
         assert "--type" in cmd
         assert "full" in cmd
-
-    def test_bakta_download_attempts_prefer_managed_env(self, tmp_path):
-        with patch("bactowise.utils.db_manager._find_conda_binary", return_value="/usr/bin/conda"):
-            with patch("bactowise.utils.db_manager.shutil.which") as mock_which:
-                mock_which.side_effect = lambda name: {
-                    "bakta_db": "/usr/bin/bakta_db",
-                    "apptainer": "/usr/bin/apptainer",
-                    "singularity": None,
-                }.get(name)
-                with patch("bactowise.utils.db_manager._bakta_sif_path", return_value=tmp_path / "bakta.sif"):
-                    attempts = _bakta_db_download_attempts(tmp_path / "bakta")
-
-        assert attempts[0][0] == "BactoWise-managed bakta_db environment"
-        assert attempts[1][0] == "local bakta_db on PATH"
-        assert attempts[2][0] == "apptainer"
 
     def test_container_runtime_env_sets_bactowise_cache_dirs(self):
         env = _container_runtime_env()

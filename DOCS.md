@@ -30,8 +30,8 @@
 
 ### Singularity / Apptainer
 
-PGAP runs inside a Singularity container. Singularity and Apptainer are the
-same runtime — Apptainer is the actively maintained community fork and is
+Bakta and PGAP run inside Singularity containers. Singularity and Apptainer are
+the same runtime — Apptainer is the actively maintained community fork and is
 recommended for new installs. The two are fully interchangeable; BactoWise
 detects whichever is available on your PATH.
 
@@ -102,7 +102,7 @@ Downloaded to `~/.bactowise/databases/checkm/`.
 bactowise db download --bakta
 ```
 Downloaded to `~/.bactowise/databases/bakta/db/`.
-Bakta runs from a BactoWise-managed conda environment by default — no container image is required.
+The Bakta Singularity image (~500 MB) is pulled automatically during preflight — no separate step needed.
 
 **PGAP supplemental data (~38 GB):**
 ```bash
@@ -263,7 +263,7 @@ this to all annotation tools:
 
 On first run, BactoWise will automatically:
 - Create any missing conda environments (e.g. `checkm_env`, `prokka_env`)
-- Create the Bakta conda environment automatically when needed
+- Pull the Bakta Singularity image (~500 MB, stored in `~/.bactowise/images/`)
 - Attempt to download any missing databases — however, because the PGAP
   download is ~30 GB it is strongly recommended to run
   `bactowise db download --pgap` explicitly before your first run rather
@@ -979,7 +979,7 @@ all available options.
 | Error | Fix |
 |---|---|
 | `singularity: command not found` | Run `module load singularity` or install Apptainer: `sudo apt install -y apptainer` |
-| `Database not found at ~/.bactowise/databases/bakta/db` | Run `bactowise db download --bakta` |
+| `Database not found at ~/.bactowise/databases/bakta` | Run `bactowise db download --bakta` |
 | `CheckM database path not found` | Run `bactowise db download --checkm` |
 | `checkm_env not found` | BactoWise creates it automatically on first run — check preflight output |
 | `prokka not found on PATH` | BactoWise creates `prokka_env` automatically on first run — check preflight output |

@@ -2,7 +2,7 @@
 
 **Complete bacterial genome characterisation — multi-tool annotation, AMR profiling, and functional analysis, automated.**
 
-BactoWise runs a full genome analysis pipeline from a single FASTA file. It handles conda environments, PGAP container runtime setup, and database downloads automatically. You provide a genome and an organism name — BactoWise does the rest.
+BactoWise runs a full genome analysis pipeline from a single FASTA file. It handles conda environments, Singularity containers, and database downloads automatically. You provide a genome and an organism name — BactoWise does the rest.
 
 ```
 Stage 1  CheckM                                  QC — completeness & contamination
@@ -18,7 +18,7 @@ Stage 4  AMRFinderPlus · Phigaro · Platon         AMR, prophages, plasmids,
 ## Prerequisites
 
 - **Conda** (Miniconda or Mambaforge)
-- **Singularity or Apptainer** — required for PGAP
+- **Singularity or Apptainer** — required for Bakta and PGAP
 
 ```bash
 # HPC cluster
@@ -47,7 +47,7 @@ conda install --use-local bactowise -c bioconda -c conda-forge
 bactowise run -f genome.fasta -n "Genus species"
 ```
 
-BactoWise sets up conda environments and downloads any missing databases automatically on first run. PGAP prepares its container runtime dependencies as needed. Results land in `./results/`.
+BactoWise sets up conda environments, pulls container images, and downloads any missing databases automatically on first run. Results land in `./results/`.
 
 > **Note:** The PGAP (~38 GB) and EggNOG-mapper (~48 GB) databases are large enough that pre-downloading is strongly recommended before your first full run — see [Databases](DOCS.md#2-databases).
 
@@ -85,7 +85,7 @@ bactowise run -f genome.fasta -n "Staphylococcus aureus" --gff bakta:/prev/run/b
 | Platon | ~2.8 GB | `bactowise db download --platon` |
 | EggNOG-mapper | ~48 GB | `bactowise db download --eggnog` |
 | SPIFinder | ~3 MB | `bactowise db download --spifinder` |
-| **Total** | **~163 GB** | run each command above |
+| **Total** | **~161 GB** | run each command above |
 
 PGAP also requires ~60 GB of working space during a run. Plan for ~223 GB of free disk before running the full pipeline.
 

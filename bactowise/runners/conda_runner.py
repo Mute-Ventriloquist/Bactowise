@@ -19,7 +19,7 @@ class CondaToolRunner(BaseRunner):
       2. Create it automatically if it doesn't, installing the tool and
          any extra dependencies declared in the config
       3. Run the tool via 'conda run -n <env_name>' which activates the env
-         internally, sets all correct library paths, and returns cleanly -
+         internally, sets all correct library paths, and returns cleanly —
          no manual activation or path resolution needed
 
     If conda_env is not set, the tool binary is expected on the active PATH.
@@ -36,12 +36,12 @@ class CondaToolRunner(BaseRunner):
         else:
             if not self._tool_installed(self.config.name):
                 raise RuntimeError(
-                    f"  '{self.config.name}' not found on PATH.\n"
+                    f"  ✗  '{self.config.name}' not found on PATH.\n"
                     f"     Install it with: conda install -c bioconda {self.config.name}\n"
                     f"     Or add a conda_env block to your config."
                 )
 
-        # Version check - warn only, never fail
+        # Version check — warn only, never fail
         try:
             cmd = self._conda_run_cmd(["--version"])
             result = subprocess.run(cmd, capture_output=True, text=True)
@@ -49,7 +49,7 @@ class CondaToolRunner(BaseRunner):
             installed_version = raw.split()[-1] if raw else "unknown"
             self._check_version(installed_version)
         except Exception:
-            console.print(f"  [warning]Warning[/warning]  Could not determine installed version of [bold]{self.config.name}[/bold].")
+            console.print(f"  [warning]⚠[/warning]  Could not determine installed version of [bold]{self.config.name}[/bold].")
 
     def _ensure_conda_env(self, env_config: CondaEnvConfig) -> None:
         """
@@ -64,7 +64,7 @@ class CondaToolRunner(BaseRunner):
         binary_path = Path(conda_root) / "envs" / env_name / "bin" / self.config.name
 
         if binary_path.exists():
-            console.print(f"  [success]OK[/success]  Conda env [bold]'{env_name}'[/bold] already exists - skipping creation.")
+            console.print(f"  [success]✓[/success]  Conda env [bold]'{env_name}'[/bold] already exists — skipping creation.")
             return
 
         console.print(f"\n  Conda env [bold]'{env_name}'[/bold] not found. Creating it now...")
@@ -75,7 +75,7 @@ class CondaToolRunner(BaseRunner):
 
         conda_bin = self._find_conda_binary()
 
-        # Omit the version pin when version is "latest" - conda installs the
+        # Omit the version pin when version is "latest" — conda installs the
         # newest compatible build. Pinning "latest" is not a valid conda spec.
         if self.config.version and self.config.version != "latest":
             packages = [f"{self.config.name}={self.config.version}"]
@@ -97,12 +97,12 @@ class CondaToolRunner(BaseRunner):
 
         if result.returncode != 0:
             raise RuntimeError(
-                f"  Failed to create conda env '{env_name}'.\n"
+                f"  ✗  Failed to create conda env '{env_name}'.\n"
                 f"     Try running manually:\n"
                 f"     {' '.join(cmd)}"
             )
 
-        console.print(f"\n  [success]OK[/success]  Conda env [bold]'{env_name}'[/bold] created successfully.")
+        console.print(f"\n  [success]✓[/success]  Conda env [bold]'{env_name}'[/bold] created successfully.")
 
     def _conda_run_cmd(self, tool_args: list[str]) -> list[str]:
         """
@@ -208,15 +208,13 @@ class CondaToolRunner(BaseRunner):
                 f"Check logs at: {log_file}"
             )
 
-        self._cprint(f"[success]OK Finished.[/success] Output at: [muted]{self.output_dir}[/muted]")
+        self._cprint(f"[success]✓ Finished.[/success] Output at: [muted]{self.output_dir}[/muted]")
         console.print()
         return self.output_dir
 
     def _build_command(self, fasta: Path) -> list[str]:
         if self.config.name == "prokka":
             return self._prokka_command(fasta)
-        if self.config.name == "bakta":
-            return self._bakta_command(fasta)
 
         # Generic fallback
         tool_args = ["--input", str(fasta), "--outdir", str(self.output_dir)]
@@ -252,56 +250,3 @@ class CondaToolRunner(BaseRunner):
 
         tool_args.append(str(fasta))
         return self._conda_run_cmd(tool_args)
-
-    def _bakta_command(self, fasta: Path) -> list[str]:
-        if not self.config.database:
-            raise RuntimeError(
-                "  Bakta requires a database path in the config.\n"
-                "     Run: bactowise db download --bakta"
-            )
-
-        db_path = self.config.database.path
-        if not db_path.exists():
-            raise RuntimeError(
-                f"  Database for '{self.config.name}' not found at: {db_path}\n"
-                f"     Run: bactowise db download --{self.config.name}"
-            )
-
-        tool_args = [
-            str(fasta),
-            "--db", str(db_path),
-            "--output", str(self.output_dir),
-            "--force",
-        ]
-        for key, val in self.config.params.items():
-            tool_args += [f"--{key}", str(val)]
-
-        if "--threads" not in tool_args:
-            tool_args += ["--threads", str(self.global_threads)]
-
-        genus, species = self._organism_parts()
-        if genus and "--genus" not in tool_args:
-            tool_args += ["--genus", genus]
-        if species and "--species" not in tool_args:
-            tool_args += ["--species", species]
-
-        return self._conda_run_cmd(tool_args)
-
-
-_ORIGINAL_CONDA_PREFLIGHT = CondaToolRunner.preflight
-
-
-def _conda_runner_preflight_with_database_check(self: CondaToolRunner) -> None:
-    _ORIGINAL_CONDA_PREFLIGHT(self)
-
-    if self.config.database:
-        db_path = self.config.database.path
-        if not db_path.exists():
-            raise RuntimeError(
-                f"  Database for '{self.config.name}' not found at: {db_path}\n"
-                f"     Run: bactowise db download --{self.config.name}"
-            )
-        console.print(f"  [success]OK[/success]  Database found at: [muted]{db_path}[/muted]")
-
-
-CondaToolRunner.preflight = _conda_runner_preflight_with_database_check

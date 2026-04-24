@@ -980,12 +980,12 @@ def _download_resumable(url: str, dest: Path, max_retries: int = 10) -> None:
 
 def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path:
     """
-    Download the Bakta full database using the default managed environment.
+    Download the Bakta full database using the most robust available method.
 
     Priority order:
-    1. A self-contained BactoWise-managed conda environment created on demand.
+    1. Apptainer / Singularity with the managed SIF image.
     2. A local bakta_db already on PATH.
-    3. Apptainer / Singularity with the managed SIF image.
+    3. A self-contained BactoWise-managed conda environment created on demand.
     """
     dest_dir = db_root / "bakta"
     dest     = bakta_db_path(db_root)
@@ -1049,20 +1049,6 @@ def _bakta_db_download_attempts(dest_dir: Path) -> list[tuple[str, list[str], di
     """Return Bakta DB download strategies in priority order."""
     attempts: list[tuple[str, list[str], dict[str, str] | None]] = []
 
-    if _find_conda_binary():
-        attempts.append((
-            "BactoWise-managed bakta_db environment",
-            ["bakta_db-conda-fallback"],
-            None,
-        ))
-
-    if shutil.which("bakta_db"):
-        attempts.append((
-            "local bakta_db on PATH",
-            ["bakta_db", "download", "--output", str(dest_dir), "--type", "full"],
-            None,
-        ))
-
     runtime_bin = shutil.which("apptainer") or shutil.which("singularity")
     if runtime_bin:
         sif = _bakta_sif_path()
@@ -1084,6 +1070,20 @@ def _bakta_db_download_attempts(dest_dir: Path) -> list[tuple[str, list[str], di
         except RuntimeError as e:
             print(f"  Container image setup failed: {e}")
             print("  Falling back to the next available Bakta DB download method.\n")
+
+    if shutil.which("bakta_db"):
+        attempts.append((
+            "local bakta_db on PATH",
+            ["bakta_db", "download", "--output", str(dest_dir), "--type", "full"],
+            None,
+        ))
+
+    if _find_conda_binary():
+        attempts.append((
+            "BactoWise-managed bakta_db environment",
+            ["bakta_db-conda-fallback"],
+            None,
+        ))
 
     if attempts:
         return attempts
