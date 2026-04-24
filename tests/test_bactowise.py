@@ -17,7 +17,11 @@ from bactowise.pipeline import Pipeline
 from bactowise.runners.factory import RunnerFactory
 from bactowise.cli import _normalize_bakta_database_config
 from bactowise.utils.config_loader import load_config
-from bactowise.utils.db_manager import bakta_db_path
+from bactowise.utils.db_manager import (
+    _bakta_db_conda_cmd,
+    _container_runtime_env,
+    bakta_db_path,
+)
 
 
 # ─── Config model tests ───────────────────────────────────────────────────────
@@ -381,6 +385,20 @@ class TestGlobalThreadsFallback:
 
     def test_bakta_db_path_uses_full_database_subdir(self, tmp_path):
         assert bakta_db_path(tmp_path) == tmp_path / "bakta" / "db-full"
+
+    def test_bakta_db_conda_cmd_uses_managed_env(self, tmp_path):
+        cmd = _bakta_db_conda_cmd("/usr/bin/conda", tmp_path / "bakta")
+        assert cmd[:4] == ["/usr/bin/conda", "run", "--no-capture-output", "-p"]
+        assert "bakta_db" in cmd
+        assert "--type" in cmd
+        assert "full" in cmd
+
+    def test_container_runtime_env_sets_bactowise_cache_dirs(self):
+        env = _container_runtime_env()
+        assert env["APPTAINER_CACHEDIR"].endswith("container-cache")
+        assert env["APPTAINER_TMPDIR"].endswith("container-tmp")
+        assert env["SINGULARITY_CACHEDIR"] == env["APPTAINER_CACHEDIR"]
+        assert env["SINGULARITY_TMPDIR"] == env["APPTAINER_TMPDIR"]
 
 
 # ─── Version warning test ─────────────────────────────────────────────────────

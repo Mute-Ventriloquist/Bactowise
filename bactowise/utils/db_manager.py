@@ -17,6 +17,7 @@ Usage (from CLI):
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import tarfile
@@ -45,6 +46,8 @@ _CHECKM_MARKERS = ["genome_tree", "hmms", "pfam"]
 # itself is confirmed by the presence of bakta.db inside db-full/.
 _BAKTA_SUBDIR    = "db-full"
 _BAKTA_MARKER    = "bakta.db"
+_BAKTA_ENV_DIR   = Path("~/.bactowise/envs/bakta_db").expanduser()
+_RUNTIME_DIR     = Path("~/.bactowise/runtime").expanduser()
 
 # PGAP: pgap.py --update downloads data to wherever PGAP_INPUT_DIR points.
 # BactoWise sets PGAP_INPUT_DIR to ~/.bactowise/databases/pgap/ during download
@@ -960,3 +963,235 @@ def _download_resumable(url: str, dest: Path, max_retries: int = 10) -> None:
                 raise RuntimeError(
                     f"Download failed after {max_retries} attempts: {e}"
                 ) from e
+
+
+def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path:
+    """
+    Download the Bakta full database using the most robust available method.
+
+    Priority order:
+    1. Apptainer / Singularity with the managed SIF image.
+    2. A local bakta_db already on PATH.
+    3. A self-contained BactoWise-managed conda environment created on demand.
+    """
+    dest_dir = db_root / "bakta"
+    dest     = bakta_db_path(db_root)
+
+    if is_bakta_present(db_root) and not force:
+        print(f"  ✓  Bakta database already present at: {dest}")
+        print("     (use --force-db-download to re-download)")
+        return dest
+
+    if force and dest_dir.exists():
+        print(f"  Removing existing Bakta database at: {dest_dir}")
+        shutil.rmtree(dest_dir)
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n  Downloading Bakta database (full, ~71 GB) → {dest}")
+    failures: list[str] = []
+
+    for label, cmd, env in _bakta_db_download_attempts(dest_dir):
+        if label == "BactoWise-managed bakta_db environment":
+            conda_bin = _find_conda_binary()
+            try:
+                if conda_bin is None:
+                    raise RuntimeError("conda or mamba not found")
+                _ensure_bakta_db_env(conda_bin)
+                cmd = _bakta_db_conda_cmd(conda_bin, dest_dir)
+            except RuntimeError as e:
+                failures.append(f"{label}: {e}")
+                print(f"  {label} failed before launch: {e}\n")
+                continue
+
+        print(f"  Trying {label}")
+        print(f"  Running: {' '.join(cmd)}\n")
+
+        result = subprocess.run(cmd, text=True, env=env)
+
+        if result.returncode == 0 and is_bakta_present(db_root):
+            print(f"\n  ✓  Bakta database ready at: {dest}\n")
+            return dest
+
+        if result.returncode == 0:
+            failures.append(
+                f"{label}: command completed but {_BAKTA_MARKER} was not found inside {dest}"
+            )
+        else:
+            failures.append(f"{label}: bakta_db download failed (exit {result.returncode})")
+
+        if dest_dir.exists():
+            shutil.rmtree(dest_dir)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+
+        print(f"  {label} failed. Trying the next available method...\n")
+
+    raise RuntimeError(
+        "Bakta database download failed with every available method.\n"
+        + "\n".join(f"  - {failure}" for failure in failures)
+    )
+
+
+def _bakta_db_download_attempts(dest_dir: Path) -> list[tuple[str, list[str], dict[str, str] | None]]:
+    """Return Bakta DB download strategies in priority order."""
+    attempts: list[tuple[str, list[str], dict[str, str] | None]] = []
+
+    runtime_bin = shutil.which("apptainer") or shutil.which("singularity")
+    if runtime_bin:
+        sif = _bakta_sif_path()
+        try:
+            if not sif.exists():
+                _pull_bakta_sif(runtime_bin, sif)
+            print(f"  Using container image: {sif}")
+            attempts.append((
+                Path(runtime_bin).name,
+                [
+                    runtime_bin, "exec",
+                    "--bind", f"{dest_dir}:/db_output:rw",
+                    str(sif),
+                    "/bin/bash", "-c",
+                    "bakta_db download --output /db_output --type full",
+                ],
+                _container_runtime_env(),
+            ))
+        except RuntimeError as e:
+            print(f"  Container image setup failed: {e}")
+            print("  Falling back to the next available Bakta DB download method.\n")
+
+    if shutil.which("bakta_db"):
+        attempts.append((
+            "local bakta_db on PATH",
+            ["bakta_db", "download", "--output", str(dest_dir), "--type", "full"],
+            None,
+        ))
+
+    if _find_conda_binary():
+        attempts.append((
+            "BactoWise-managed bakta_db environment",
+            ["bakta_db-conda-fallback"],
+            None,
+        ))
+
+    if attempts:
+        return attempts
+
+    raise RuntimeError(
+        "Cannot download Bakta database — no supported runtime was found.\n\n"
+        "BactoWise looked for:\n"
+        "  - apptainer or singularity\n"
+        "  - bakta_db on PATH\n"
+        "  - conda or mamba to bootstrap a managed bakta_db environment\n\n"
+        "Install one of those and retry."
+    )
+
+
+def _container_runtime_env() -> dict[str, str]:
+    """
+    Keep container cache and temp data under ~/.bactowise/ so Bakta DB
+    downloads are self-contained and less dependent on host temp directories.
+    """
+    cache_dir = _RUNTIME_DIR / "container-cache"
+    tmp_dir   = _RUNTIME_DIR / "container-tmp"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    env = dict(os.environ)
+    env["APPTAINER_CACHEDIR"]   = str(cache_dir)
+    env["APPTAINER_TMPDIR"]     = str(tmp_dir)
+    env["SINGULARITY_CACHEDIR"] = str(cache_dir)
+    env["SINGULARITY_TMPDIR"]   = str(tmp_dir)
+    return env
+
+
+def _find_conda_binary() -> str | None:
+    """Locate conda or mamba, returning None if neither is available."""
+    for binary in ["mamba", "conda"]:
+        path = shutil.which(binary)
+        if path:
+            return path
+
+    candidates: list[Path] = []
+
+    for env_var in ("CONDA_PREFIX_1", "CONDA_PREFIX"):
+        val = os.environ.get(env_var)
+        if not val:
+            continue
+        prefix = Path(val).expanduser()
+        candidates.extend([prefix / "bin" / "mamba", prefix / "bin" / "conda"])
+        candidates.extend([
+            prefix.parent.parent / "bin" / "mamba",
+            prefix.parent.parent / "bin" / "conda",
+        ])
+
+    home = Path.home()
+    for root in [
+        home / "miniconda3",
+        home / "anaconda3",
+        home / "mambaforge",
+        home / "miniforge3",
+        Path("/opt/conda"),
+        Path("/opt/miniconda3"),
+        Path("/opt/anaconda3"),
+    ]:
+        candidates.extend([root / "bin" / "mamba", root / "bin" / "conda"])
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    return None
+
+
+def _ensure_bakta_db_env(conda_bin: str) -> None:
+    """Create a local Bakta downloader environment under ~/.bactowise/envs/."""
+    bakta_db_bin = _BAKTA_ENV_DIR / "bin" / "bakta_db"
+    if bakta_db_bin.exists():
+        return
+
+    _BAKTA_ENV_DIR.parent.mkdir(parents=True, exist_ok=True)
+
+    version = _bakta_tool_version()
+    pkg = f"bakta={version}" if version and version != "latest" else "bakta"
+    cmd = [
+        conda_bin, "create",
+        "-p", str(_BAKTA_ENV_DIR),
+        "-y",
+        "--strict-channel-priority",
+        "-c", "conda-forge",
+        "-c", "bioconda",
+        pkg,
+    ]
+
+    print("  Bakta downloader environment not found. Creating it now...")
+    print(f"  Running: {' '.join(cmd)}\n")
+
+    result = subprocess.run(cmd, text=True)
+    if result.returncode != 0 or not bakta_db_bin.exists():
+        raise RuntimeError(
+            "Failed to create the self-contained Bakta downloader environment.\n"
+            f"Tried: {' '.join(cmd)}"
+        )
+
+
+def _bakta_db_conda_cmd(conda_bin: str, dest_dir: Path) -> list[str]:
+    """Build the conda-run command for the managed Bakta downloader env."""
+    return [
+        conda_bin, "run",
+        "--no-capture-output",
+        "-p", str(_BAKTA_ENV_DIR),
+        "bakta_db", "download",
+        "--output", str(dest_dir),
+        "--type", "full",
+    ]
+
+
+def _bakta_tool_version() -> str | None:
+    """Read the Bakta version from the bundled pipeline config."""
+    import yaml
+    from bactowise.utils.config_manager import bundled_config_path
+
+    config = yaml.safe_load(bundled_config_path().read_text())
+    for tool in config.get("tools", []):
+        if tool.get("name") == "bakta":
+            return tool.get("version")
+    return None
