@@ -43,27 +43,13 @@ conda install --use-local bactowise -c bioconda -c conda-forge
 
 ## Quick start
 
-**1. Download databases** (~96 GB total — do this before your first run):
-
 ```bash
-bactowise db download            # CheckM + Bakta (~5 GB, fast)
-bactowise db download --pgap     # PGAP supplemental data (~38 GB)
-bactowise db download --eggnog   # EggNOG-mapper (~48 GB, resumable)
+bactowise run -f genome.fasta -n "Genus species"
 ```
 
-**2. Get a test genome** (*M. genitalium* — 580 kb, annotates in minutes):
+BactoWise sets up conda environments, pulls container images, and downloads any missing databases automatically on first run. Results land in `./results/`.
 
-```bash
-efetch -db nucleotide -id NC_000908.2 -format fasta > mgenitalium.fasta
-```
-
-**3. Run:**
-
-```bash
-bactowise run -f mgenitalium.fasta -n "Mycoplasmoides genitalium"
-```
-
-**4. Results** land in `./results/` — one subdirectory per tool.
+> **Note:** The PGAP (~38 GB) and EggNOG-mapper (~48 GB) databases are large enough that pre-downloading is strongly recommended before your first full run — see [Databases](DOCS.md#2-databases).
 
 ---
 
