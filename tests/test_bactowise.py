@@ -15,7 +15,9 @@ import yaml
 from bactowise.models.config import DatabaseConfig, PipelineConfig, ToolConfig
 from bactowise.pipeline import Pipeline
 from bactowise.runners.factory import RunnerFactory
+from bactowise.cli import _normalize_bakta_database_config
 from bactowise.utils.config_loader import load_config
+from bactowise.utils.db_manager import bakta_db_path
 
 
 # ─── Config model tests ───────────────────────────────────────────────────────
@@ -55,7 +57,7 @@ class TestPipelineConfig:
                 {
                     "name": "bakta", "version": "1.9.3", "runtime": "docker",
                     "image": "oschwengers/bakta:1.9.3",
-                    "database": {"path": str(tmp_path), "type": "light"},
+                    "database": {"path": str(tmp_path), "type": "full"},
                 },
             ],
             "output_dir": str(tmp_path),
@@ -78,13 +80,37 @@ class TestPipelineConfig:
 
 class TestDatabaseConfig:
     def test_valid_path_passes(self, tmp_path):
-        db = DatabaseConfig(path=str(tmp_path), type="light")
+        db = DatabaseConfig(path=str(tmp_path), type="full")
         assert db.path == tmp_path
 
     def test_path_expanded(self):
         # ~ should be expanded without raising
-        db = DatabaseConfig(path="~/some_db", type="light")
+        db = DatabaseConfig(path="~/some_db", type="full")
         assert "~" not in str(db.path)
+
+    def test_legacy_bakta_config_is_normalized_to_full(self, tmp_path):
+        cfg = PipelineConfig(
+            tools=[
+                {
+                    "name": "bakta",
+                    "version": "1.12.0",
+                    "runtime": "singularity",
+                    "image": "oschwengers/bakta:v1.12.0",
+                    "database": {
+                        "path": str(tmp_path / "bakta" / "db-light"),
+                        "type": "light",
+                    },
+                }
+            ],
+            output_dir=str(tmp_path),
+        )
+
+        normalized, changed = _normalize_bakta_database_config(cfg)
+
+        assert changed is True
+        assert normalized.tools[0].database is not None
+        assert normalized.tools[0].database.type == "full"
+        assert normalized.tools[0].database.path == (tmp_path / "bakta" / "db-full").resolve()
 
 
 # ─── Config loader tests ──────────────────────────────────────────────────────
@@ -352,6 +378,9 @@ class TestGlobalThreadsFallback:
         fasta.touch()
         cmd = runner._bakta_command(fasta)
         assert cmd[cmd.index("--threads") + 1] == "3"
+
+    def test_bakta_db_path_uses_full_database_subdir(self, tmp_path):
+        assert bakta_db_path(tmp_path) == tmp_path / "bakta" / "db-full"
 
 
 # ─── Version warning test ─────────────────────────────────────────────────────

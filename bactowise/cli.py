@@ -20,6 +20,7 @@ from bactowise.utils.db_manager import (
     _PHIGARO_DB_DIR,
     _PLATON_DB_DIR,
     _SPIFINDER_ROOT,
+    bakta_db_path,
     download_bakta,
     download_checkm,
     download_eggnog,
@@ -56,6 +57,31 @@ db_app = typer.Typer(
 app.add_typer(db_app, name="db")
 
 
+def _normalize_bakta_database_config(config):
+    """Upgrade legacy managed Bakta config to the full database at runtime."""
+    normalized = False
+
+    for idx, tool in enumerate(config.tools):
+        if tool.name != "bakta" or tool.database is None:
+            continue
+
+        db_updates = {}
+        if tool.database.type == "light":
+            db_updates["type"] = "full"
+        if tool.database.path.name == "db-light":
+            db_updates["path"] = tool.database.path.with_name("db-full")
+
+        if not db_updates:
+            continue
+
+        normalized = True
+        config.tools[idx] = tool.model_copy(
+            update={"database": tool.database.model_copy(update=db_updates)}
+        )
+
+    return config, normalized
+
+
 @db_app.command("download")
 def db_download(
     checkm: bool = typer.Option(False, "--checkm", help="CheckM only."),
@@ -69,12 +95,12 @@ def db_download(
         help="Re-download even if already present.",
     ),
 ):
-    """Download all required databases, one-time (~96 GB total on disk).
+    """Download all required databases, one-time (~161 GB total on disk).
 
     \b
     Stores all databases under ~/.bactowise/databases/:
       checkm/      — CheckM marker gene database (~1.4 GB)
-      bakta/       — Bakta annotation database, light build (~4 GB)
+      bakta/       — Bakta annotation database, full build (~71 GB)
       pgap/        — PGAP supplemental data (~38 GB; ~100 GB total with working space)
       platon/      — Platon plasmid database (~2.8 GB)
       eggnog/      — EggNOG-mapper database (~48 GB)
@@ -192,7 +218,7 @@ def db_status():
     console.print("  [bold white]Stage 2 — Annotation[/bold white]")
     console.print(
         f"    {'[success]✓[/success]' if bakta_ok else '[error]✗[/error]'}"
-        f"  Bakta    → [muted]{DEFAULT_DB_ROOT / 'bakta' / 'db-light'}[/muted]"
+        f"  Bakta    → [muted]{bakta_db_path()}[/muted]"
     )
     console.print(
         f"    {'[success]✓[/success]' if pgap_ok else '[error]✗[/error]'}"
@@ -438,6 +464,7 @@ def run(
 
     try:
         pipeline_config = load_config(config_path)
+        pipeline_config, bakta_config_upgraded = _normalize_bakta_database_config(pipeline_config)
 
         # Override output_dir if the user supplied -o / --output.
         # model_copy(update=...) returns a new validated instance — the original
@@ -464,6 +491,12 @@ def run(
             f"  [label]Threads[/label]  : [bold]{effective_threads}[/bold]"
             + (" [muted](--threads override)[/muted]" if threads is not None else " [muted](pipeline.yaml default)[/muted]")
         )
+        if bakta_config_upgraded:
+            console.print(
+                "  [warning]Legacy Bakta light-database config detected.[/warning] "
+                "[muted]Using db-full/type full for this run. "
+                "Run 'bactowise init --reset' to update your installed config.[/muted]"
+            )
         console.print()
 
         pipeline = Pipeline(
@@ -507,6 +540,7 @@ def validate():
 
     try:
         cfg = load_config(config_path)
+        cfg, bakta_config_upgraded = _normalize_bakta_database_config(cfg)
         console.print(f"\n[success]✓ Config valid — {len(cfg.tools)} tool(s):[/success]\n")
         for tool in cfg.tools:
             role_tag = f" [{tool.role}]" if tool.role == "qc" else ""
@@ -532,6 +566,14 @@ def validate():
         console.print(f"  [label]config[/label]     : [muted]{config_path}[/muted]")
         console.print(f"  [label]output_dir[/label] : [muted]{cfg.output_dir}[/muted]")
         console.print(f"  [label]threads[/label]    : [bold]{cfg.threads}[/bold]\n")
+        if bakta_config_upgraded:
+            console.print(
+                "  [warning]Legacy Bakta light-database config detected in the installed file.[/warning]"
+            )
+            console.print(
+                "  [muted]BactoWise will use db-full/type full at runtime. "
+                "Run 'bactowise init --reset' to update ~/.bactowise/config/pipeline.yaml.[/muted]\n"
+            )
     except (FileNotFoundError, ValueError) as e:
         console.print(f"\n[user_error]✗ {e}[/user_error]")
         raise typer.Exit(code=1)

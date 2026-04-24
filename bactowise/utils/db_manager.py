@@ -5,7 +5,7 @@ Manages downloads of all databases required by the BactoWise pipeline.
 
 Default storage location: ~/.bactowise/databases/
   ~/.bactowise/databases/checkm/   — CheckM marker gene database (~2 GB)
-  ~/.bactowise/databases/bakta/    — Bakta annotation database, light build (~2 GB)
+  ~/.bactowise/databases/bakta/    — Bakta annotation database, full build (~71 GB)
   ~/.bactowise/databases/pgap/     — PGAP supplemental data (~30 GB)
 
 Usage (from CLI):
@@ -41,9 +41,9 @@ CHECKM_DB_URL = (
 # reduce the chance of a false positive from a partial extraction.
 _CHECKM_MARKERS = ["genome_tree", "hmms", "pfam"]
 
-# Bakta: bakta_db creates a db-light/ subdir inside --output; the database
-# itself is confirmed by the presence of bakta.db inside db-light/.
-_BAKTA_SUBDIR    = "db-light"
+# Bakta: bakta_db creates a db-full/ subdir inside --output; the database
+# itself is confirmed by the presence of bakta.db inside db-full/.
+_BAKTA_SUBDIR    = "db-full"
 _BAKTA_MARKER    = "bakta.db"
 
 # PGAP: pgap.py --update downloads data to wherever PGAP_INPUT_DIR points.
@@ -115,7 +115,7 @@ def checkm_db_path(db_root: Path = DEFAULT_DB_ROOT) -> Path:
 
 
 def bakta_db_path(db_root: Path = DEFAULT_DB_ROOT) -> Path:
-    """Returns the actual Bakta database directory (bakta/db-light/).
+    """Returns the actual Bakta database directory (bakta/db-full/).
     This is what gets mounted into Docker and passed to the tool."""
     return db_root / "bakta" / _BAKTA_SUBDIR
 
@@ -129,7 +129,7 @@ def is_checkm_present(db_root: Path = DEFAULT_DB_ROOT) -> bool:
 
 def is_bakta_present(db_root: Path = DEFAULT_DB_ROOT) -> bool:
     """Return True only if the Bakta database appears complete.
-    Checks for db.json inside the db-light/ subdirectory."""
+    Checks for bakta.db inside the db-full/ subdirectory."""
     return (bakta_db_path(db_root) / _BAKTA_MARKER).exists()
 
 
@@ -541,7 +541,7 @@ def download_checkm(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Pat
 
 def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path:
     """
-    Download the Bakta light database using bakta_db.
+    Download the Bakta full database using bakta_db.
 
     Since Bakta runs inside a Singularity container (not installed in the
     BactoWise conda environment), bakta_db is invoked in one of two ways:
@@ -557,7 +557,7 @@ def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path
     db_root : parent directory for all BactoWise databases
     """
     dest_dir = db_root / "bakta"
-    dest     = bakta_db_path(db_root)   # db-light/ inside dest_dir
+    dest     = bakta_db_path(db_root)   # db-full/ inside dest_dir
 
     if is_bakta_present(db_root) and not force:
         print(f"  ✓  Bakta database already present at: {dest}")
@@ -572,7 +572,7 @@ def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path
 
     cmd = _bakta_db_download_cmd(dest_dir)
 
-    print(f"\n  Downloading Bakta database (light, ~2 GB) → {dest}")
+    print(f"\n  Downloading Bakta database (full, ~71 GB) → {dest}")
     print(f"  Running: {' '.join(cmd)}\n")
 
     result = subprocess.run(cmd, text=True)
@@ -717,7 +717,7 @@ def _bakta_db_download_cmd(dest_dir: Path) -> list[str]:
             "--bind", f"{dest_dir}:/db_output:rw",
             str(sif),
             "/bin/bash", "-c",
-            "bakta_db download --output /db_output --type light",
+            "bakta_db download --output /db_output --type full",
         ]
 
     # ── Option 2: Docker ─────────────────────────────────────────────────────
@@ -732,12 +732,12 @@ def _bakta_db_download_cmd(dest_dir: Path) -> list[str]:
             "--volume", f"{dest_dir}:/db_output",
             "--entrypoint", "/bin/bash",
             image_ref,
-            "-c", "bakta_db download --output /db_output --type light",
+            "-c", "bakta_db download --output /db_output --type full",
         ]
 
     # ── Option 3: bakta_db on PATH ────────────────────────────────────────────
     if shutil.which("bakta_db"):
-        return ["bakta_db", "download", "--output", str(dest_dir), "--type", "light"]
+        return ["bakta_db", "download", "--output", str(dest_dir), "--type", "full"]
 
     # ── Nothing available ─────────────────────────────────────────────────────
     raise RuntimeError(

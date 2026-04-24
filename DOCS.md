@@ -84,12 +84,12 @@ BactoWise stores all managed databases under `~/.bactowise/databases/` and
 tracks them through the `bactowise db` command. The default configuration
 already points to these paths — no manual edits needed.
 
-> **Total disk space required: ~160 GB**
-> ~96 GB for all databases combined, plus ~60 GB working space during a PGAP run
+> **Total disk space required: ~223 GB**
+> ~163 GB for all databases combined, plus ~60 GB working space during a PGAP run
 > (NCBI documents ~100 GB total for PGAP supplemental data and working space combined).
 > Ensure your filesystem has sufficient free space before starting.
 
-### Stages 1–2 databases (~43 GB)
+### Stages 1–2 databases (~110 GB)
 
 **CheckM (~1.4 GB):**
 ```bash
@@ -97,11 +97,11 @@ bactowise db download --checkm
 ```
 Downloaded to `~/.bactowise/databases/checkm/`.
 
-**Bakta (~4 GB):**
+**Bakta full database (~71 GB):**
 ```bash
 bactowise db download --bakta
 ```
-Downloaded to `~/.bactowise/databases/bakta/db-light/`.
+Downloaded to `~/.bactowise/databases/bakta/db-full/`.
 The Bakta Singularity image (~500 MB) is pulled automatically during preflight — no separate step needed.
 
 **PGAP supplemental data (~38 GB):**
@@ -167,7 +167,7 @@ bactowise db download
 
 ```bash
 bactowise db download --checkm     # CheckM only (~1.4 GB)
-bactowise db download --bakta      # Bakta only (~4 GB)
+bactowise db download --bakta      # Bakta only (~71 GB)
 bactowise db download --pgap       # PGAP only (~38 GB)
 bactowise db download --platon     # Platon only (~2.8 GB)
 bactowise db download --eggnog     # EggNOG only (~48 GB)
@@ -199,7 +199,7 @@ Stage 1 — QC
   ✓  CheckM   → ~/.bactowise/databases/checkm            (~1.4 GB)
 
 Stage 2 — Annotation
-  ✓  Bakta    → ~/.bactowise/databases/bakta/db-light    (~4 GB)
+  ✓  Bakta    → ~/.bactowise/databases/bakta/db-full     (~71 GB)
   ✓  PGAP     → ~/.bactowise/databases/pgap              (~38 GB)
 
 Stage 4 — Supplementary
@@ -1206,8 +1206,8 @@ update the `database.path` for the relevant tool:
 ```yaml
 - name: bakta
   database:
-    path: "/scratch/my_project/bakta/db-light"
-    type: light
+    path: "/scratch/my_project/bakta/db-full"
+    type: full
 
 - name: checkm
   database:
@@ -1250,7 +1250,7 @@ runner class. No other files need to change.
   image: "org/your_tool:2.1.0"
   database:
     path: "~/.bactowise/databases/your_tool_db"
-    type: light
+    type: full
   params:
     threads: 4
 ```

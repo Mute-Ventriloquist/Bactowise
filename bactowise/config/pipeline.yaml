@@ -63,8 +63,8 @@ tools:
     depends_on: [checkm]
     image: "oschwengers/bakta:v1.12.0"
     database:
-      path: "~/.bactowise/databases/bakta/db-light"
-      type: light
+      path: "~/.bactowise/databases/bakta/db-full"
+      type: full
     params:
       min-contig-length: 200
       threads: 4
