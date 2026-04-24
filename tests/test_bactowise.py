@@ -114,7 +114,7 @@ class TestDatabaseConfig:
         assert changed is True
         assert normalized.tools[0].database is not None
         assert normalized.tools[0].database.type == "full"
-        assert normalized.tools[0].database.path == (tmp_path / "bakta" / "db-full").resolve()
+        assert normalized.tools[0].database.path == (tmp_path / "bakta" / "db").resolve()
 
 
 # ─── Config loader tests ──────────────────────────────────────────────────────
@@ -384,7 +384,7 @@ class TestGlobalThreadsFallback:
         assert cmd[cmd.index("--threads") + 1] == "3"
 
     def test_bakta_db_path_uses_full_database_subdir(self, tmp_path):
-        assert bakta_db_path(tmp_path) == tmp_path / "bakta" / "db-full"
+        assert bakta_db_path(tmp_path) == tmp_path / "bakta" / "db"
 
     def test_bakta_db_conda_cmd_uses_managed_env(self, tmp_path):
         cmd = _bakta_db_conda_cmd("/usr/bin/conda", tmp_path / "bakta")

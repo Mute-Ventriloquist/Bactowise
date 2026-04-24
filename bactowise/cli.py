@@ -68,8 +68,8 @@ def _normalize_bakta_database_config(config):
         db_updates = {}
         if tool.database.type == "light":
             db_updates["type"] = "full"
-        if tool.database.path.name == "db-light":
-            db_updates["path"] = tool.database.path.with_name("db-full")
+        if tool.database.path.name in {"db-light", "db-full"}:
+            db_updates["path"] = tool.database.path.with_name("db")
 
         if not db_updates:
             continue
@@ -494,7 +494,7 @@ def run(
         if bakta_config_upgraded:
             console.print(
                 "  [warning]Legacy Bakta light-database config detected.[/warning] "
-                "[muted]Using db-full/type full for this run. "
+                "[muted]Using db/type full for this run. "
                 "Run 'bactowise init --reset' to update your installed config.[/muted]"
             )
         console.print()
@@ -571,7 +571,7 @@ def validate():
                 "  [warning]Legacy Bakta light-database config detected in the installed file.[/warning]"
             )
             console.print(
-                "  [muted]BactoWise will use db-full/type full at runtime. "
+                "  [muted]BactoWise will use db/type full at runtime. "
                 "Run 'bactowise init --reset' to update ~/.bactowise/config/pipeline.yaml.[/muted]\n"
             )
     except (FileNotFoundError, ValueError) as e:

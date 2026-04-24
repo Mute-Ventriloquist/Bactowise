@@ -193,7 +193,7 @@ class Pipeline:
 
         missing = []
         if needs_checkm  and not is_checkm_present():  missing.append("CheckM (~1.4 GB)")
-        if needs_bakta   and not is_bakta_present():   missing.append("Bakta (~4 GB)")
+        if needs_bakta   and not is_bakta_present():   missing.append("Bakta (~71 GB)")
         if needs_pgap    and not is_pgap_present():    missing.append("PGAP (~38 GB)")
         if needs_phigaro and not is_phigaro_present(): missing.append("Phigaro pVOG profiles (~1.6 GB)")
         if needs_platon  and not is_platon_present():  missing.append("Platon (~2.8 GB)")
@@ -212,8 +212,8 @@ class Pipeline:
             console.print()
 
         console.print(
-            "  [label]Disk space:[/label]  ~160 GB total required\n"
-            "    [muted]• ~96 GB for all databases (CheckM 1.4 GB · Bakta 4 GB · PGAP 38 GB ·[/muted]\n"
+            "  [label]Disk space:[/label]  ~223 GB total required\n"
+            "    [muted]• ~163 GB for all databases (CheckM 1.4 GB · Bakta 71 GB · PGAP 38 GB ·[/muted]\n"
             "    [muted]  Phigaro 1.6 GB · Platon 2.8 GB · EggNOG 48 GB)[/muted]\n"
             "    [muted]• ~60 GB additional working space during a PGAP run[/muted]\n"
             "    [muted]  (NCBI quotes ~100 GB total for PGAP data + working space combined)[/muted]\n"

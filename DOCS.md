@@ -101,7 +101,7 @@ Downloaded to `~/.bactowise/databases/checkm/`.
 ```bash
 bactowise db download --bakta
 ```
-Downloaded to `~/.bactowise/databases/bakta/db-full/`.
+Downloaded to `~/.bactowise/databases/bakta/db/`.
 The Bakta Singularity image (~500 MB) is pulled automatically during preflight — no separate step needed.
 
 **PGAP supplemental data (~38 GB):**
@@ -199,7 +199,7 @@ Stage 1 — QC
   ✓  CheckM   → ~/.bactowise/databases/checkm            (~1.4 GB)
 
 Stage 2 — Annotation
-  ✓  Bakta    → ~/.bactowise/databases/bakta/db-full     (~71 GB)
+  ✓  Bakta    → ~/.bactowise/databases/bakta/db          (~71 GB)
   ✓  PGAP     → ~/.bactowise/databases/pgap              (~38 GB)
 
 Stage 4 — Supplementary
@@ -1206,7 +1206,7 @@ update the `database.path` for the relevant tool:
 ```yaml
 - name: bakta
   database:
-    path: "/scratch/my_project/bakta/db-full"
+    path: "/scratch/my_project/bakta/db"
     type: full
 
 - name: checkm

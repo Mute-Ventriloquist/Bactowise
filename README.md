@@ -87,7 +87,7 @@ bactowise run -f genome.fasta -n "Staphylococcus aureus" --gff bakta:/prev/run/b
 | SPIFinder | ~3 MB | `bactowise db download --spifinder` |
 | **Total** | **~161 GB** | run each command above |
 
-PGAP also requires ~60 GB of working space during a run. Plan for ~221 GB of free disk before running the full pipeline.
+PGAP also requires ~60 GB of working space during a run. Plan for ~223 GB of free disk before running the full pipeline.
 
 Check database status at any time:
 ```bash

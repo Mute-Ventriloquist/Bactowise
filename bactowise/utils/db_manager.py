@@ -42,9 +42,11 @@ CHECKM_DB_URL = (
 # reduce the chance of a false positive from a partial extraction.
 _CHECKM_MARKERS = ["genome_tree", "hmms", "pfam"]
 
-# Bakta: bakta_db creates a db-full/ subdir inside --output; the database
-# itself is confirmed by the presence of bakta.db inside db-full/.
-_BAKTA_SUBDIR    = "db-full"
+# Bakta full DB downloads extract to db/ while light DB downloads use db-light/.
+# BactoWise now manages the full DB at bakta/db/ but still tolerates legacy
+# db-full/ paths created by earlier BactoWise releases.
+_BAKTA_SUBDIR    = "db"
+_BAKTA_LEGACY_SUBDIRS = ("db-full",)
 _BAKTA_MARKER    = "bakta.db"
 _BAKTA_ENV_DIR   = Path("~/.bactowise/envs/bakta_db").expanduser()
 _RUNTIME_DIR     = Path("~/.bactowise/runtime").expanduser()
@@ -118,9 +120,18 @@ def checkm_db_path(db_root: Path = DEFAULT_DB_ROOT) -> Path:
 
 
 def bakta_db_path(db_root: Path = DEFAULT_DB_ROOT) -> Path:
-    """Returns the actual Bakta database directory (bakta/db-full/).
-    This is what gets mounted into Docker and passed to the tool."""
-    return db_root / "bakta" / _BAKTA_SUBDIR
+    """Return the preferred Bakta database directory."""
+    root = db_root / "bakta"
+    preferred = root / _BAKTA_SUBDIR
+    if (preferred / _BAKTA_MARKER).exists():
+        return preferred
+
+    for legacy in _BAKTA_LEGACY_SUBDIRS:
+        candidate = root / legacy
+        if (candidate / _BAKTA_MARKER).exists():
+            return candidate
+
+    return preferred
 
 
 def is_checkm_present(db_root: Path = DEFAULT_DB_ROOT) -> bool:
@@ -132,8 +143,10 @@ def is_checkm_present(db_root: Path = DEFAULT_DB_ROOT) -> bool:
 
 def is_bakta_present(db_root: Path = DEFAULT_DB_ROOT) -> bool:
     """Return True only if the Bakta database appears complete.
-    Checks for bakta.db inside the db-full/ subdirectory."""
-    return (bakta_db_path(db_root) / _BAKTA_MARKER).exists()
+    Checks for bakta.db in the managed full DB directory or accepted legacy path."""
+    root = db_root / "bakta"
+    candidates = [root / _BAKTA_SUBDIR] + [root / legacy for legacy in _BAKTA_LEGACY_SUBDIRS]
+    return any((candidate / _BAKTA_MARKER).exists() for candidate in candidates)
 
 
 def pgap_data_dir(data_dir: Path = _DEFAULT_PGAP_DATA_DIR) -> Path:
@@ -560,7 +573,7 @@ def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path
     db_root : parent directory for all BactoWise databases
     """
     dest_dir = db_root / "bakta"
-    dest     = bakta_db_path(db_root)   # db-full/ inside dest_dir
+    dest     = bakta_db_path(db_root)   # preferred full DB path inside dest_dir
 
     if is_bakta_present(db_root) and not force:
         print(f"  ✓  Bakta database already present at: {dest}")

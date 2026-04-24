@@ -53,7 +53,7 @@ class SingularityToolRunner(BaseRunner):
                     f"  ✗  Bakta requires a database path.\n"
                     f"     Add to pipeline.yaml:\n"
                     f"       database:\n"
-                    f"         path: ~/.bactowise/databases/bakta/db-full\n"
+                    f"         path: ~/.bactowise/databases/bakta/db\n"
                     f"         type: full\n"
                     f"     Then run: bactowise db download --bakta"
                 )

@@ -63,7 +63,7 @@ tools:
     depends_on: [checkm]
     image: "oschwengers/bakta:v1.12.0"
     database:
-      path: "~/.bactowise/databases/bakta/db-full"
+      path: "~/.bactowise/databases/bakta/db"
       type: full
     params:
       min-contig-length: 200
