@@ -41,6 +41,16 @@ class CondaToolRunner(BaseRunner):
                     f"     Or add a conda_env block to your config."
                 )
 
+        # Validate database path for tools that require it
+        if self.config.name == "bakta" and self.config.database:
+            db_path = self.config.database.path.expanduser().resolve()
+            if not db_path.exists():
+                raise RuntimeError(
+                    f"  ✗  Bakta database not found at: {db_path}\n"
+                    f"     Run: bactowise db download --bakta"
+                )
+            console.print(f"  [success]✓[/success]  Bakta database found: [muted]{db_path}[/muted]")
+
         # Version check — warn only, never fail
         try:
             cmd = self._conda_run_cmd(["--version"])
@@ -215,6 +225,9 @@ class CondaToolRunner(BaseRunner):
     def _build_command(self, fasta: Path) -> list[str]:
         if self.config.name == "prokka":
             return self._prokka_command(fasta)
+        
+        if self.config.name == "bakta":
+            return self._bakta_command(fasta)
 
         # Generic fallback
         tool_args = ["--input", str(fasta), "--outdir", str(self.output_dir)]
@@ -249,4 +262,37 @@ class CondaToolRunner(BaseRunner):
             tool_args += ["--species", species]
 
         tool_args.append(str(fasta))
+        return self._conda_run_cmd(tool_args)
+
+    def _bakta_command(self, fasta: Path) -> list[str]:
+        """
+        Build the bakta command for conda execution.
+        
+        Bakta command structure:
+            bakta <genome.fasta> --db <db_path> --output <output_dir> --prefix bakta_output
+                  [--genus <genus>] [--species <species>] [--threads <n>] [other params]
+        """
+        tool_args = [
+            str(fasta.resolve()),
+            "--db", str(self.config.database.path.expanduser().resolve()),
+            "--output", str(self.output_dir),
+            "--prefix", "bakta_output",
+            "--force",
+        ]
+        
+        # Add user-specified params from config
+        for key, val in self.config.params.items():
+            tool_args += [f"--{key}", str(val)]
+        
+        # Fall back to global_threads if threads not explicitly set
+        if "--threads" not in tool_args:
+            tool_args += ["--threads", str(self.global_threads)]
+        
+        # Inject genus/species from the -n/--organism CLI arg if provided
+        genus, species = self._organism_parts()
+        if genus and "--genus" not in tool_args:
+            tool_args += ["--genus", genus]
+        if species and "--species" not in tool_args:
+            tool_args += ["--species", species]
+        
         return self._conda_run_cmd(tool_args)
