@@ -568,11 +568,8 @@ consensus annotation.
 
 ### What it does
 
-The consensus engine resolves disagreements between the three annotation tools
-by computing confidence scores and consensus levels (e.g. `Consensus_2/3`,
-`Consensus_3/3`). It produces a comprehensive annotation table alongside
-standard bioinformatics output formats compatible with Geneious, SnapGene, and
-downstream pangenome tools like Panaroo.
+The consensus engine compares CDS predictions from Bakta, Prokka, and PGAP at each locus and produces a single reconciled annotation with a confidence score indicating how strongly the three tools agreed. It resolves disagreements between the three annotation tools
+by computing confidence scores and consensus levels (e.g. `Consensus_2/3`,`Consensus_3/3`). It produces a comprehensive annotation table alongside standard bioinformatics output formats compatible with Geneious, SnapGene, and downstream pangenome tools like Panaroo.
 
 ### Inputs (staged automatically by BactoWise)
 
