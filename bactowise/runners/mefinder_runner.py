@@ -113,7 +113,7 @@ class MobileElementFinderRunner(CondaToolRunner):
         #   (pyyaml, click, attrs, tabulate all have conda-forge packages)
         _EXCLUDE = {"MobileElementFinder", "mobileelement-finder",
                     "biopython", "pyyaml", "click", "attrs", "tabulate"}
-        conda_deps = ["python=3.11", "biopython", "pyyaml", "click",
+        conda_deps = ["python=3.11", "pip", "biopython", "pyyaml", "click",
                       "attrs", "tabulate", "blast", "kma"] + [
             d for d in env_config.dependencies if d not in _EXCLUDE
         ]
