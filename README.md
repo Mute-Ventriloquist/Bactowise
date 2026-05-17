@@ -1,15 +1,15 @@
 # BactoWise
 
-**Complete bacterial genome characterisation — multi-tool annotation, AMR profiling, and functional analysis, automated.**
+**Complete bacterial genome characterisation - multi-tool annotation, AMR profiling, and functional analysis, automated.**
 
 BactoWise runs a full genome analysis pipeline from a single FASTA file. It handles conda environments, Singularity containers, and database downloads automatically. You provide a genome and an organism name — BactoWise does the rest.
 
 ```
-Stage 1  CheckM                                  QC — completeness & contamination
-Stage 2  Prokka + Bakta + PGAP                   Gene annotation (parallel)
-Stage 3  Consensus Engine                         Single authoritative annotation
-Stage 4  AMRFinderPlus · Phigaro · Platon         AMR, prophages, plasmids,
-         MEFinder · EggNOG-mapper · SPIFinder*    MGEs, GO/KEGG, SPIs
+Stage 1  CheckM                                    QC — completeness & contamination
+Stage 2  Prokka + Bakta + PGAP                     Gene annotation (parallel)
+Stage 3  Consensus Engine                          Single authoritative annotation
+Stage 4  AMRFinderPlus · Phigaro · Platon          AMR, prophages, plasmids,
+         MEFinder · EggNOG-mapper · SPIFinder*     MGEs, GO/KEGG, SPIs
 ```
 *SPIFinder runs only for Salmonella genomes.
 
