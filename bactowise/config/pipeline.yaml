@@ -160,7 +160,9 @@ tools:
         - conda-forge
         - bioconda
         - defaults
-      dependencies: []
+      dependencies:
+        - python=3.11
+        - pip
     params:
       # threads: 4   # defaults to global threads
 
