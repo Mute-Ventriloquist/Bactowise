@@ -78,9 +78,9 @@ class ToolConfig(BaseModel):
         if self.runtime == "docker" and self.image is None:
             self.image = f"{self.name}:{self.version}"
 
-        if self.conda_env and self.runtime not in ["conda", "singularity"]:
+        if self.conda_env and self.runtime != "conda":
             raise ValueError(
-                f"'conda_env' is only valid for runtime: conda, singularity"
+                f"'conda_env' is only valid for runtime: conda, "
                 f"but tool '{self.name}' has runtime: {self.runtime}"
             )
 
