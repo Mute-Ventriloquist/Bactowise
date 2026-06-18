@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 from pathlib import Path
 
-from bactowise.models.config import CondaEnvConfig, ToolConfig
+from bactowise.models.config import ToolConfig
 from bactowise.runners.base import BaseRunner
 from bactowise.utils.console import console
 
@@ -21,27 +20,17 @@ class SingularityToolRunner(BaseRunner):
 
     Works on any system where Singularity or Apptainer is installed —
     including HPC clusters running SLURM, where Docker is not permitted.
-
-    Some tools (e.g. bakta) declare a `conda_env` block in pipeline.yaml
-    purely to get a working apptainer/mksquashfs — NOT to run the tool
-    itself via conda. System-bundled apptainer packages vendor their own
-    squashfs-tools build, which can segfault during pull/build. When
-    `conda_env` is set, we create/reuse an isolated conda env containing a
-    known-good apptainer (+ pinned squashfs-tools), and route *both* the
-    pull and the container execution through that env's binary, so we
-    never build with one apptainer and run with another.
     """
 
     def __init__(self, tool_config: ToolConfig, output_dir: Path, organism: str = "", global_threads: int = 4):
         super().__init__(tool_config, output_dir, organism, global_threads)
-        self._binary_cache: str | None = None
 
     # ── Preflight ─────────────────────────────────────────────────────────────
 
     def preflight(self) -> None:
         console.print(f"\n[info]\\[preflight][/info] Checking singularity tool: [bold]{self.config.name}[/bold]")
 
-        binary = self._get_binary()
+        binary = self._find_singularity()
         console.print(f"  [success]✓[/success]  Found container runtime: [muted]{binary}[/muted]")
 
         self._validate_required_fields()
@@ -77,7 +66,7 @@ class SingularityToolRunner(BaseRunner):
             return
 
         _SIF_DIR.mkdir(parents=True, exist_ok=True)
-        binary = self._get_binary()
+        binary = self._find_singularity()
         uri    = f"docker://{self.config.image}"
 
         console.print(f"  SIF image not found. Pulling [bold]{uri}[/bold]")
@@ -106,7 +95,7 @@ class SingularityToolRunner(BaseRunner):
         binds    = self._build_binds(fasta)
         cmd_args = self._build_command(fasta)
         log_file = self.log_dir / f"{self.config.name}.log"
-        binary   = self._get_binary()
+        binary   = self._find_singularity()
 
         cmd = [binary, "run"] + binds + ["--writable-tmpfs", str(sif)] + cmd_args
 
@@ -128,139 +117,6 @@ class SingularityToolRunner(BaseRunner):
         return self.output_dir
 
     # ── Internal helpers ──────────────────────────────────────────────────────
-
-    def _get_binary(self) -> str:
-        """
-        Resolve the singularity/apptainer binary used for both pulling and
-        running this tool's container. If the tool config declares a
-        `conda_env`, that env is created on first use (if needed) and its
-        own apptainer binary is preferred over the system PATH. Cached for
-        the lifetime of this runner so the resolution only happens once.
-        """
-        if self._binary_cache:
-            return self._binary_cache
-
-        if self.config.conda_env:
-            self._ensure_conda_env(self.config.conda_env)
-            self._binary_cache = self._find_env_binary(self.config.conda_env.name)
-        else:
-            self._binary_cache = self._find_singularity()
-
-        return self._binary_cache
-
-    def _ensure_conda_env(self, env_config: CondaEnvConfig) -> None:
-        """
-        Create the conda environment declared for this tool if it doesn't
-        already exist. Unlike CondaToolRunner's version of this method,
-        this does NOT install the tool itself (e.g. "bakta") as a conda
-        package — bakta runs inside the Singularity container, not via
-        conda. This env exists purely to provide a working apptainer +
-        squashfs-tools, so only `env_config.dependencies` gets installed.
-        """
-        env_name = env_config.name
-
-        conda_root = self._find_conda_root()
-        env_bin = Path(conda_root) / "envs" / env_name / "bin"
-
-        if (env_bin / "apptainer").exists() or (env_bin / "singularity").exists():
-            console.print(f"  [success]✓[/success]  Conda env [bold]'{env_name}'[/bold] already exists — skipping creation.")
-            return
-
-        console.print(f"\n  Conda env [bold]'{env_name}'[/bold] not found. Creating it now...")
-        console.print(f"    Dependencies: {env_config.dependencies}")
-        console.print(f"    Channels: {env_config.channels}")
-        console.print(f"    This is a one-time step and may take a few minutes.\n")
-
-        conda_bin = self._find_conda_binary()
-
-        cmd = [conda_bin, "create", "-n", env_name, "-y", "--strict-channel-priority"]
-        for channel in env_config.channels:
-            cmd += ["-c", channel]
-        cmd += env_config.dependencies
-
-        console.print(f"  Running: {' '.join(cmd)}\n")
-        result = subprocess.run(cmd, text=True)
-
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"  ✗  Failed to create conda env '{env_name}'.\n"
-                f"     Try running manually:\n"
-                f"     {' '.join(cmd)}"
-            )
-
-        console.print(f"\n  [success]✓[/success]  Conda env [bold]'{env_name}'[/bold] created successfully.")
-
-    def _find_env_binary(self, env_name: str) -> str:
-        conda_root = self._find_conda_root()
-        env_bin = Path(conda_root) / "envs" / env_name / "bin"
-
-        for name in ["apptainer", "singularity"]:
-            candidate = env_bin / name
-            if candidate.exists():
-                return str(candidate)
-
-        raise RuntimeError(
-            f"  ✗  Conda env '{env_name}' exists but has no apptainer/singularity binary.\n"
-            f"     Check that 'apptainer' is listed under conda_env.dependencies in pipeline.yaml."
-        )
-
-    def _find_conda_binary(self) -> str:
-        """
-        Locate the conda or mamba executable.
-
-        Checks PATH first, then falls back to common install locations
-        derived from conda environment variables and well-known default paths.
-        """
-        for binary in ["mamba", "conda"]:
-            path = shutil.which(binary)
-            if path:
-                return path
-
-        conda_root_candidates = []
-
-        if os.environ.get("CONDA_PREFIX_1"):
-            conda_root_candidates.append(os.environ["CONDA_PREFIX_1"])
-
-        if os.environ.get("CONDA_PREFIX"):
-            prefix = Path(os.environ["CONDA_PREFIX"])
-            conda_root_candidates.append(str(prefix.parent.parent))
-            conda_root_candidates.append(str(prefix))
-
-        home = Path.home()
-        conda_root_candidates += [
-            str(home / "miniconda3"),
-            str(home / "anaconda3"),
-            str(home / "mambaforge"),
-            str(home / "miniforge3"),
-            "/opt/conda",
-            "/opt/miniconda3",
-            "/opt/anaconda3",
-        ]
-
-        for root in conda_root_candidates:
-            for binary in ["mamba", "conda"]:
-                candidate = Path(root) / "bin" / binary
-                if candidate.exists():
-                    return str(candidate)
-
-        raise RuntimeError(
-            "Could not locate conda or mamba.\n"
-            "Tried PATH and common install locations. Please ensure conda is\n"
-            "installed and try running: conda activate base"
-        )
-
-    def _find_conda_root(self) -> str:
-        """Locate the conda installation root directory."""
-        root = os.environ.get("CONDA_PREFIX_1")
-        if root:
-            return root
-        prefix = os.environ.get("CONDA_PREFIX", "")
-        if prefix:
-            p = Path(prefix)
-            if (p / "envs").exists():
-                return str(p)
-            return str(p.parent.parent)
-        return os.path.expanduser("~/miniconda3")
 
     def _find_singularity(self) -> str:
         for binary in ["singularity", "apptainer"]:
