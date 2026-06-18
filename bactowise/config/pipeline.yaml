@@ -75,6 +75,7 @@ tools:
       type: full
     params:
       min-contig-length: 200
+      threads: 4
 
   # pgap.py and its supplemental data are downloaded automatically on first run,
   # or explicitly with: bactowise db download --pgap
