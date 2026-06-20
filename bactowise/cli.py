@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import shutil
+import subprocess
 
 import typer
 
@@ -117,6 +119,176 @@ def clean_database(
     except Exception as e:
         console.print(f"  [error]✗ Failed to delete[/error]  {e}\n")
         raise typer.Exit(code=1)
+
+
+@clean_app.command("env")
+def clean_env(
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Skip confirmation and delete immediately.",
+    ),
+):
+    """Delete all BactoWise conda environments.
+
+    \b
+    This removes all conda environments created by BactoWise for running
+    annotation tools (checkm_env, bakta_env, prokka_env, etc.).
+    
+    Environments are large but can be recreated automatically on the next run.
+    Use this command to reclaim disk space or perform a clean install.
+
+    \b
+    Examples:
+      bactowise clean env
+      bactowise clean env --force
+      bactowise clean env -f
+    """
+    config_path = active_config_path()
+    
+    if not config_path.exists():
+        console.print(
+            f"\n[info]ℹ[/info] Config not found: [muted]{config_path}[/muted]"
+        )
+        console.print("  Run [bold]bactowise init[/bold] first.\n")
+        return
+    
+    try:
+        pipeline_config = load_config(config_path)
+    except (FileNotFoundError, ValueError) as e:
+        console.print(f"\n[error]✗ Failed to load config[/error]  {e}\n")
+        raise typer.Exit(code=1)
+    
+    # Extract all unique conda environment names from the config
+    env_names = set()
+    for tool in pipeline_config.tools:
+        if tool.conda_env:
+            env_names.add(tool.conda_env.name)
+    
+    if not env_names:
+        console.print(f"\n[info]✓[/info] No conda environments configured.\n")
+        return
+    
+    # Find conda binary and root
+    try:
+        conda_bin = _find_conda_binary_for_clean()
+        conda_root = _find_conda_root_for_clean()
+    except RuntimeError as e:
+        console.print(f"\n[error]✗ {e}[/error]\n")
+        raise typer.Exit(code=1)
+    
+    # Check which environments actually exist and calculate total size
+    existing_envs = {}
+    for env_name in sorted(env_names):
+        env_path = Path(conda_root) / "envs" / env_name
+        if env_path.exists():
+            env_size = sum(f.stat().st_size for f in env_path.rglob("*") if f.is_file())
+            existing_envs[env_name] = (env_path, env_size)
+    
+    if not existing_envs:
+        console.print(f"\n[info]✓[/info] No BactoWise conda environments found.\n")
+        return
+    
+    total_size_gb = sum(size for _, size in existing_envs.values()) / (1024**3)
+    
+    console.print(f"\n[warning]BactoWise Conda Environments[/warning]")
+    console.print(f"  Found: [bold]{len(existing_envs)}[/bold] environment(s)")
+    console.print(f"  Total size: [bold]{total_size_gb:.1f} GB[/bold]")
+    console.print()
+    
+    for env_name in sorted(existing_envs.keys()):
+        env_path, env_size = existing_envs[env_name]
+        env_size_gb = env_size / (1024**3)
+        console.print(f"  • {env_name:<25} [muted]{env_size_gb:.2f} GB[/muted]")
+    console.print()
+    
+    if not force:
+        if not typer.confirm("Delete these environments?"):
+            console.print("  [info]Cancelled.[/info]\n")
+            return
+    
+    # Delete each environment
+    errors = []
+    for env_name in sorted(existing_envs.keys()):
+        try:
+            console.print(f"  Removing {env_name}...", end=" ")
+            result = subprocess.run(
+                [conda_bin, "env", "remove", "-n", env_name, "-y"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                console.print("[success]✓[/success]")
+            else:
+                console.print("[error]✗[/error]")
+                errors.append(f"{env_name}: {result.stderr.strip()}")
+        except Exception as e:
+            errors.append(f"{env_name}: {e}")
+            console.print("[error]✗[/error]")
+    
+    console.print()
+    if errors:
+        console.print("[warning]Some environments failed to delete:[/warning]")
+        for error in errors:
+            console.print(f"  • {error}")
+        console.print()
+        raise typer.Exit(code=1)
+    
+    console.print(f"[success]✓ Deleted[/success]  [bold]{len(existing_envs)}[/bold] environment(s)\n")
+
+
+def _find_conda_binary_for_clean() -> str:
+    """Locate the conda or mamba executable (helper for clean command)."""
+    for binary in ["mamba", "conda"]:
+        path = shutil.which(binary)
+        if path:
+            return path
+    
+    conda_root_candidates = []
+    
+    if os.environ.get("CONDA_PREFIX_1"):
+        conda_root_candidates.append(os.environ["CONDA_PREFIX_1"])
+    
+    if os.environ.get("CONDA_PREFIX"):
+        prefix = Path(os.environ["CONDA_PREFIX"])
+        conda_root_candidates.append(str(prefix.parent.parent))
+        conda_root_candidates.append(str(prefix))
+    
+    home = Path.home()
+    conda_root_candidates += [
+        str(home / "miniconda3"),
+        str(home / "anaconda3"),
+        str(home / "mambaforge"),
+        str(home / "miniforge3"),
+        "/opt/conda",
+        "/opt/miniconda3",
+        "/opt/anaconda3",
+    ]
+    
+    for root in conda_root_candidates:
+        for binary in ["mamba", "conda"]:
+            candidate = Path(root) / "bin" / binary
+            if candidate.exists():
+                return str(candidate)
+    
+    raise RuntimeError(
+        "Could not locate conda or mamba.\n"
+        "Tried PATH and common install locations. Please ensure conda is\n"
+        "installed and try running: conda activate base"
+    )
+
+
+def _find_conda_root_for_clean() -> str:
+    """Locate the conda installation root directory (helper for clean command)."""
+    root = os.environ.get("CONDA_PREFIX_1")
+    if root:
+        return root
+    prefix = os.environ.get("CONDA_PREFIX", "")
+    if prefix:
+        p = Path(prefix)
+        if (p / "envs").exists():
+            return str(p)
+        return str(p.parent.parent)
+    return os.path.expanduser("~/miniconda3")
 
 
 def _normalize_bakta_database_config(config):
