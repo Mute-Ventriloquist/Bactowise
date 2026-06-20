@@ -19,7 +19,12 @@ class BaseRunner(abc.ABC):
         self.config = tool_config
         self.organism = organism.strip()
         self.global_threads = global_threads
-        self.output_dir = output_dir / tool_config.name
+
+        if tool_config.name == "consensus":
+            self.output_dir = output_dir / "bactowise_results"
+        else:
+            self.output_dir = output_dir / "tool_results" / tool_config.name
+
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir = self.output_dir / "logs"
         self.log_dir.mkdir(parents=True, exist_ok=True)

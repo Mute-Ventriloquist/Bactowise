@@ -416,7 +416,7 @@ class Pipeline:
         """
         for tool_name in stage_tools:
             src             = self.gff_files[tool_name]
-            tool_output_dir = self.config.output_dir / tool_name
+            tool_output_dir = self.config.output_dir / "tool_results" / tool_name
             tool_output_dir.mkdir(parents=True, exist_ok=True)
 
             dst = tool_output_dir / f"provided_{src.name}"

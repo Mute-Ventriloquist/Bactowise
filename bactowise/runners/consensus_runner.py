@@ -119,7 +119,7 @@ class ConsensusRunner(CondaToolRunner):
         self._cprint("Collecting stage 2 outputs into staging folder...")
         console.print()
 
-        output_root = self.output_dir.parent   # <config.output_dir>
+        output_root = self.output_dir.parent / "tool_results"
 
         bakta_gff  = self._find_gff("bakta",  output_root)
         prokka_gff = self._find_gff("prokka", output_root)
