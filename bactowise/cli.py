@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 
 import typer
 
@@ -55,6 +56,67 @@ db_app = typer.Typer(
     add_completion=False,
 )
 app.add_typer(db_app, name="db")
+
+
+# ── clean sub-command group ───────────────────────────────────────────────────
+
+clean_app = typer.Typer(
+    name="clean",
+    help="Clean up BactoWise data and caches.",
+    add_completion=False,
+)
+app.add_typer(clean_app, name="clean")
+
+
+@clean_app.command("database")
+def clean_database(
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Skip confirmation and delete immediately.",
+    ),
+):
+    """Delete the BactoWise databases directory.
+
+    \b
+    This removes ~/.bactowise/databases/ which contains all downloaded
+    annotation and analysis databases (CheckM, Bakta, PGAP, EggNOG, etc.).
+    
+    Database files are large (~161 GB total) but can be re-downloaded anytime.
+    Use this command to reclaim disk space or perform a clean install.
+
+    \b
+    Examples:
+      bactowise clean database
+      bactowise clean database --force
+      bactowise clean database -f
+    """
+    db_root = DEFAULT_DB_ROOT
+    
+    if not db_root.exists():
+        console.print(f"\n[info]✓[/info] Databases directory not found: [muted]{db_root}[/muted]")
+        console.print("  Nothing to clean.\n")
+        return
+    
+    db_size = sum(f.stat().st_size for f in db_root.rglob("*") if f.is_file())
+    db_size_gb = db_size / (1024**3)
+    
+    console.print(f"\n[warning]Databases Directory[/warning]")
+    console.print(f"  Location: [muted]{db_root}[/muted]")
+    console.print(f"  Size:     [bold]{db_size_gb:.1f} GB[/bold]")
+    console.print()
+    
+    if not force:
+        if not typer.confirm("Delete this directory?"):
+            console.print("  [info]Cancelled.[/info]\n")
+            return
+    
+    try:
+        console.print("  Removing databases...")
+        shutil.rmtree(db_root)
+        console.print(f"  [success]✓ Deleted[/success]  [muted]{db_root}[/muted]\n")
+    except Exception as e:
+        console.print(f"  [error]✗ Failed to delete[/error]  {e}\n")
+        raise typer.Exit(code=1)
 
 
 def _normalize_bakta_database_config(config):
