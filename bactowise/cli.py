@@ -70,34 +70,17 @@ clean_app = typer.Typer(
 app.add_typer(clean_app, name="clean")
 
 
-@clean_app.command("database")
-def clean_database(
-    force: bool = typer.Option(
-        False, "--force", "-f",
-        help="Skip confirmation and delete immediately.",
-    ),
-):
-    """Delete the BactoWise databases directory.
-
-    \b
-    This removes ~/.bactowise/databases/ which contains all downloaded
-    annotation and analysis databases (CheckM, Bakta, PGAP, EggNOG, etc.).
+def _do_clean_database(force: bool) -> tuple[bool, str]:
+    """Core implementation for database cleaning.
     
-    Database files are large (~161 GB total) but can be re-downloaded anytime.
-    Use this command to reclaim disk space or perform a clean install.
-
-    \b
-    Examples:
-      bactowise clean database
-      bactowise clean database --force
-      bactowise clean database -f
+    Returns: (success: bool, message: str)
     """
     db_root = DEFAULT_DB_ROOT
     
     if not db_root.exists():
         console.print(f"\n[info]✓[/info] Databases directory not found: [muted]{db_root}[/muted]")
         console.print("  Nothing to clean.\n")
-        return
+        return (True, "Database directory not found (nothing to clean)")
     
     db_size = sum(f.stat().st_size for f in db_root.rglob("*") if f.is_file())
     db_size_gb = db_size / (1024**3)
@@ -110,38 +93,22 @@ def clean_database(
     if not force:
         if not typer.confirm("Delete this directory?"):
             console.print("  [info]Cancelled.[/info]\n")
-            return
+            return (True, "Cancelled by user")
     
     try:
         console.print("  Removing databases...")
         shutil.rmtree(db_root)
         console.print(f"  [success]✓ Deleted[/success]  [muted]{db_root}[/muted]\n")
+        return (True, f"Deleted {db_size_gb:.1f} GB")
     except Exception as e:
         console.print(f"  [error]✗ Failed to delete[/error]  {e}\n")
-        raise typer.Exit(code=1)
+        return (False, str(e))
 
 
-@clean_app.command("env")
-def clean_env(
-    force: bool = typer.Option(
-        False, "--force", "-f",
-        help="Skip confirmation and delete immediately.",
-    ),
-):
-    """Delete all BactoWise conda environments.
-
-    \b
-    This removes all conda environments created by BactoWise for running
-    annotation tools (checkm_env, bakta_env, prokka_env, etc.).
+def _do_clean_env(force: bool) -> tuple[bool, str]:
+    """Core implementation for conda environment cleaning.
     
-    Environments are large but can be recreated automatically on the next run.
-    Use this command to reclaim disk space or perform a clean install.
-
-    \b
-    Examples:
-      bactowise clean env
-      bactowise clean env --force
-      bactowise clean env -f
+    Returns: (success: bool, message: str)
     """
     config_path = active_config_path()
     
@@ -150,13 +117,13 @@ def clean_env(
             f"\n[info]ℹ[/info] Config not found: [muted]{config_path}[/muted]"
         )
         console.print("  Run [bold]bactowise init[/bold] first.\n")
-        return
+        return (True, "Config not found")
     
     try:
         pipeline_config = load_config(config_path)
     except (FileNotFoundError, ValueError) as e:
         console.print(f"\n[error]✗ Failed to load config[/error]  {e}\n")
-        raise typer.Exit(code=1)
+        return (False, f"Failed to load config: {e}")
     
     # Extract all unique conda environment names from the config
     env_names = set()
@@ -166,7 +133,7 @@ def clean_env(
     
     if not env_names:
         console.print(f"\n[info]✓[/info] No conda environments configured.\n")
-        return
+        return (True, "No environments configured")
     
     # Find conda binary and root
     try:
@@ -174,7 +141,7 @@ def clean_env(
         conda_root = _find_conda_root_for_clean()
     except RuntimeError as e:
         console.print(f"\n[error]✗ {e}[/error]\n")
-        raise typer.Exit(code=1)
+        return (False, str(e))
     
     # Check which environments actually exist and calculate total size
     existing_envs = {}
@@ -186,7 +153,7 @@ def clean_env(
     
     if not existing_envs:
         console.print(f"\n[info]✓[/info] No BactoWise conda environments found.\n")
-        return
+        return (True, "No environments found")
     
     total_size_gb = sum(size for _, size in existing_envs.values()) / (1024**3)
     
@@ -204,7 +171,7 @@ def clean_env(
     if not force:
         if not typer.confirm("Delete these environments?"):
             console.print("  [info]Cancelled.[/info]\n")
-            return
+            return (True, "Cancelled by user")
     
     # Delete each environment
     errors = []
@@ -231,9 +198,119 @@ def clean_env(
         for error in errors:
             console.print(f"  • {error}")
         console.print()
-        raise typer.Exit(code=1)
+        return (False, f"Failed to delete {len(errors)} environment(s)")
     
     console.print(f"[success]✓ Deleted[/success]  [bold]{len(existing_envs)}[/bold] environment(s)\n")
+    return (True, f"Deleted {len(existing_envs)} environment(s)")
+
+
+# Registry of all clean commands (add new ones here for automatic inclusion in clean all)
+_CLEAN_COMMANDS_REGISTRY = [
+    ("database", _do_clean_database),
+    ("env", _do_clean_env),
+]
+
+
+@clean_app.command("database")
+def clean_database(
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Skip confirmation and delete immediately.",
+    ),
+):
+    """Delete the BactoWise databases directory.
+
+    \b
+    This removes ~/.bactowise/databases/ which contains all downloaded
+    annotation and analysis databases (CheckM, Bakta, PGAP, EggNOG, etc.).
+    
+    Database files are large (~161 GB total) but can be re-downloaded anytime.
+    Use this command to reclaim disk space or perform a clean install.
+
+    \b
+    Examples:
+      bactowise clean database
+      bactowise clean database --force
+      bactowise clean database -f
+    """
+    success, message = _do_clean_database(force)
+    if not success:
+        raise typer.Exit(code=1)
+
+
+@clean_app.command("env")
+def clean_env(
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Skip confirmation and delete immediately.",
+    ),
+):
+    """Delete all BactoWise conda environments.
+
+    \b
+    This removes all conda environments created by BactoWise for running
+    annotation tools (checkm_env, bakta_env, prokka_env, etc.).
+    
+    Environments are large but can be recreated automatically on the next run.
+    Use this command to reclaim disk space or perform a clean install.
+
+    \b
+    Examples:
+      bactowise clean env
+      bactowise clean env --force
+      bactowise clean env -f
+    """
+    success, message = _do_clean_env(force)
+    if not success:
+        raise typer.Exit(code=1)
+
+
+@clean_app.command("all")
+def clean_all(
+    force: bool = typer.Option(
+        False, "--force", "-f",
+        help="Skip confirmation and delete everything immediately.",
+    ),
+):
+    """Run all BactoWise clean commands.
+
+    \b
+    This runs all available clean commands in sequence:
+      • bactowise clean database
+      • bactowise clean env
+    
+    This is useful for a complete cleanup (e.g., before uninstalling).
+    Can be extended in the future to include additional clean commands.
+
+    \b
+    Examples:
+      bactowise clean all
+      bactowise clean all --force
+      bactowise clean all -f
+    """
+    console.print("\n[bold]Running all BactoWise clean commands[/bold]\n")
+    
+    results = {}
+    for command_name, command_func in _CLEAN_COMMANDS_REGISTRY:
+        results[command_name] = command_func(force)
+    
+    console.print("\n[bold]Summary[/bold]")
+    console.print()
+    
+    all_success = True
+    for command_name, (success, message) in results.items():
+        status = "[success]✓[/success]" if success else "[error]✗[/error]"
+        console.print(f"  {status} clean {command_name:<15} {message}")
+        if not success:
+            all_success = False
+    
+    console.print()
+    
+    if all_success:
+        console.print("[success]✓ All clean commands completed successfully[/success]\n")
+    else:
+        console.print("[warning]Some commands had failures or were cancelled[/warning]\n")
+        raise typer.Exit(code=1)
 
 
 def _find_conda_binary_for_clean() -> str:
