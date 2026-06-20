@@ -50,6 +50,8 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
+import subprocess
+import sys
 
 
 # ==============================================================================
@@ -2018,6 +2020,51 @@ def cleanup_temp_files(output_folder: str):
         if f.startswith("_tmp_") and f.endswith(".xlsx"):
             os.remove(os.path.join(output_folder, f))
 
+# ==============================================================================
+# GENERATE QC DASHBOARD
+# ==============================================================================
+def generate_qc_dashboard(output_folder: str):
+    """
+    Generate QC-Dashboard.html by invoking build_qc_dashboard.py.
+
+    Assumes build_qc_dashboard.py resides in the same directory as this file.
+    """
+
+    output_folder = Path(output_folder)
+
+    if not output_folder.exists():
+        raise FileNotFoundError(
+            f"Output folder does not exist: {output_folder}"
+        )
+
+    master_table = output_folder / "Master_Table_Annotation.xlsx"
+
+    if not master_table.exists():
+        raise FileNotFoundError(
+            f"Required input not found: {master_table}"
+        )
+
+    script = Path(__file__).parent / "build_qc_dashboard.py"
+
+    if not script.exists():
+        raise FileNotFoundError(
+            f"Could not locate dashboard builder: {script}"
+        )
+
+    logger.info("Generating QC dashboard...")
+
+    subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--output-folder",
+            str(output_folder),
+        ],
+        check=True,
+    )
+
+    logger.info("QC dashboard generated successfully.")
+
 
 # ==============================================================================
 # MAIN PIPELINE
@@ -2132,9 +2179,17 @@ def run_annotation_pipeline(input_folder: str, output_folder: str,
         write_fna(df, genome, output_folder, prefix)
         write_manual_queue(df, output_folder)
         write_qc_dashboard(df, output_folder)
+        
+        # ── Generate QC dashboard ────────────────────────────────────────────
+        logger.info("\n[20] Generating QC dashboard.")
+
+        try:
+            generate_qc_dashboard(output_folder)
+        except Exception as e:
+            logger.warning(f"QC dashboard generation failed: {e}")
 
         # ── Summary ──────────────────────────────────────────────────────────
-        logger.info("\n[20] Generating summary report...")
+        logger.info("\n[21] Generating summary report.")
         generate_summary(df, output_folder)
 
         # ── Cleanup ───────────────────────────────────────────────────────────
