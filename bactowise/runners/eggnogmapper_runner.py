@@ -33,7 +33,7 @@ class EggNOGMapperRunner(CondaToolRunner):
     identified across Bakta, Prokka, and PGAP — the core purpose of this
     stage.
 
-    The FAA file is located at: <output_dir>/consensus/GENE.faa
+    The FAA file is located at: <output_dir>/bactowise_results/GENE.faa
 
     Database
     --------
@@ -47,7 +47,7 @@ class EggNOGMapperRunner(CondaToolRunner):
 
     Output
     ------
-    <output_dir>/eggnogmapper/
+    <output_dir>/tool_results/eggnogmapper/
         eggnog_output.emapper.annotations   per-gene annotations (TSV)
         eggnog_output.emapper.hits           raw DIAMOND hits
         eggnog_output.emapper.seed_orthologs seed orthologs
@@ -259,12 +259,12 @@ class EggNOGMapperRunner(CondaToolRunner):
     def _consensus_faa_path(self) -> Path:
         """
         Return the path to the consensus engine protein FASTA.
-        The consensus runner writes to <output_dir>/consensus/GENE.faa.
-        The output_dir here is <base_output>/eggnogmapper/, so we walk
-        up to the base output dir.
+        The consensus runner writes to <output_dir>/bactowise_results/GENE.faa.
+        The output_dir here is <base_output>/tool_results/eggnogmapper/, so we walk
+        up two levels to the base output dir, then into bactowise_results.
         """
-        base_output_dir = self.output_dir.parent
-        return base_output_dir / "consensus" / f"{_CONSENSUS_FAA_PREFIX}.faa"
+        base_output_dir = self.output_dir.parent.parent  # From tool_results/eggnogmapper/ to <out_dir>/
+        return base_output_dir / "bactowise_results" / f"{_CONSENSUS_FAA_PREFIX}.faa"
 
     def _conda_run_cmd(self, tool_args: list[str]) -> list[str]:
         """Override to use 'emapper.py' as the binary name."""
