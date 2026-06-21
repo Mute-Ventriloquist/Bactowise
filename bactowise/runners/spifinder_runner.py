@@ -62,8 +62,10 @@ class SPIFinderRunner(CondaToolRunner):
     threshold : float  Minimum identity threshold 0–1 (default: 0.95)
     """
 
-    # pip packages required inside spifinder_env
-    _PIP_DEPS = ["cgecore", "tabulate", "biopython", "gitpython", "python-dateutil"]
+    # Packages installed via conda (have pre-built binaries — avoids pip build failures)
+    _CONDA_DEPS = ["biopython", "tabulate", "python-dateutil"]
+    # Packages only available via pip (no conda package exists)
+    _PIP_DEPS = ["cgecore", "gitpython"]
 
     def preflight(self) -> None:
         console.print(f"\n[info]\\[preflight][/info] Checking spifinder (stage 4)")
@@ -121,9 +123,14 @@ class SPIFinderRunner(CondaToolRunner):
         console.print(f"    This is a one-time step and may take a few minutes.\n")
 
         conda_bin  = self._find_conda_binary()
-        conda_deps = ["python=3.11", "blast", "git"] + [
+        # Install python, blast, git, and any deps that have conda packages here.
+        # This mirrors the mefinder pattern: conda handles biopython/tabulate/
+        # python-dateutil (pre-built binaries), pip only handles cgecore and
+        # gitpython which have no conda package.
+        _EXCLUDE = set(self._PIP_DEPS)  # don't double-install pip-only deps via conda
+        conda_deps = ["python=3.11", "blast", "git"] + self._CONDA_DEPS + [
             d for d in env_config.dependencies
-            if d not in self._PIP_DEPS
+            if d not in _EXCLUDE and d not in self._CONDA_DEPS
         ]
 
         cmd = [conda_bin, "create", "-n", env_name, "-y", "--strict-channel-priority"]
@@ -149,7 +156,9 @@ class SPIFinderRunner(CondaToolRunner):
         )
 
     def _ensure_pip_deps(self, env_name: str) -> None:
-        """Install CGE Python dependencies via pip into the env."""
+        """Install pip-only CGE dependencies into the env.
+        biopython/tabulate/python-dateutil are installed via conda during env
+        creation so pip only needs to handle cgecore and gitpython."""
         conda_bin = self._find_conda_binary()
         pip_cmd = [
             conda_bin, "run", "--no-capture-output",
