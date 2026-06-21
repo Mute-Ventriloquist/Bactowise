@@ -239,6 +239,10 @@ tools:
         - defaults
       dependencies:
         - python=3.11   # distutils was removed in 3.12; spifinder.py requires it
+        - pip           # required for python -m pip installs (not always present by default)
+        - biopython     # pre-built conda binary; avoids pip C-extension build failures
+        - tabulate      # same — has a conda package, install here not via pip
+        - python-dateutil  # same
     params:
       min_cov: 0.60
       threshold: 0.95
