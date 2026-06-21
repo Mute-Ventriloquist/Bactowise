@@ -84,12 +84,12 @@ BactoWise stores all managed databases under `~/.bactowise/databases/` and
 tracks them through the `bactowise db` command. The default configuration
 already points to these paths — no manual edits needed.
 
-> **Total disk space required: ~223 GB**
-> ~163 GB for all databases combined, plus ~60 GB working space during a PGAP run
+> **Total disk space required: ~238 GB**
+> ~176 GB for all databases combined, plus ~60 GB working space during a PGAP run
 > (NCBI documents ~100 GB total for PGAP supplemental data and working space combined).
 > Ensure your filesystem has sufficient free space before starting.
 
-### Stages 1–2 databases (~110 GB)
+### Stages 1–2 databases (~123 GB)
 
 **CheckM (~1.4 GB):**
 ```bash
@@ -97,7 +97,7 @@ bactowise db download --checkm
 ```
 Downloaded to `~/.bactowise/databases/checkm/`.
 
-**Bakta full database (~71 GB):**
+**Bakta full database (~84 GB):**
 ```bash
 bactowise db download --bakta
 ```
@@ -116,7 +116,7 @@ requested separately. This command also downloads `pgap.py` to
 > working space combined. With 38 GB already on disk as the database, plan for
 > ~60 GB additional working space during a PGAP run.
 
-### Stage 4 databases (~54 GB combined)
+### Stage 4 databases (~52 GB combined)
 
 Stage 4 databases are downloaded automatically on first run if not already
 present. Because of their size, pre-downloading is strongly recommended:
@@ -167,7 +167,7 @@ bactowise db download
 
 ```bash
 bactowise db download --checkm     # CheckM only (~1.4 GB)
-bactowise db download --bakta      # Bakta only (~71 GB)
+bactowise db download --bakta      # Bakta only (~84 GB)
 bactowise db download --pgap       # PGAP only (~38 GB)
 bactowise db download --platon     # Platon only (~2.8 GB)
 bactowise db download --eggnog     # EggNOG only (~48 GB)
@@ -199,7 +199,7 @@ Stage 1 — QC
   ✓  CheckM   → ~/.bactowise/databases/checkm            (~1.4 GB)
 
 Stage 2 — Annotation
-  ✓  Bakta    → ~/.bactowise/databases/bakta/db          (~71 GB)
+  ✓  Bakta    → ~/.bactowise/databases/bakta/db          (~84 GB)
   ✓  PGAP     → ~/.bactowise/databases/pgap              (~38 GB)
 
 Stage 4 — Supplementary
@@ -265,7 +265,7 @@ On first run, BactoWise will automatically:
 - Create any missing conda environments (e.g. `checkm_env`, `prokka_env`)
 - Pull the Bakta Singularity image (~500 MB, stored in `~/.bactowise/images/`)
 - Attempt to download any missing databases — however, because the PGAP
-  download is ~30 GB it is strongly recommended to run
+  download is ~38 GB it is strongly recommended to run
   `bactowise db download --pgap` explicitly before your first run rather
   than relying on the automatic download.
 
@@ -694,7 +694,7 @@ phage gene density.
 **Input:** The original genome FASTA (`-f`). Phigaro calls its own ORFs
 internally — no stage 2 or stage 3 outputs are required.
 
-**Database:** pVOG HMM profiles (~1.5 GB), downloaded automatically by
+**Database:** pVOG HMM profiles (~1.6 GB), downloaded automatically by
 `phigaro-setup` during preflight to `~/.bactowise/databases/phigaro/pvog/`.
 The config file is written to `~/.bactowise/databases/phigaro/config.yml`.
 No manual setup is required.
@@ -807,8 +807,8 @@ uses a stage 3 output: the goal is to annotate every consensus gene identified
 across Bakta, Prokka, and PGAP with biological context, so the consensus
 protein set is the correct input.
 
-**Database:** ~20 GB total, stored at `~/.bactowise/databases/eggnog/`:
-- `eggnog.db` — main annotation SQLite database (~15 GB)
+**Database:** ~48 GB total, stored at `~/.bactowise/databases/eggnog/`:
+- `eggnog.db` — main annotation SQLite database (~43 GB)
 - `eggnog_proteins.dmnd` — DIAMOND search database (~4 GB)
 - `eggnog.taxa.db` — taxonomy database
 
@@ -984,7 +984,7 @@ all available options.
 | CheckM fails silently | Check `results/checkm/logs/checkm.log` |
 | Download interrupted | Re-run the same `bactowise db download --<tool>` command — partial downloads resume automatically |
 | `pgap.py not found` | Run `bactowise db download --pgap` — downloads pgap.py and supplemental data automatically |
-| `PGAP supplemental data not found` | Run `bactowise db download --pgap` (~30 GB). Use `--skip pgap` to run without it. |
+| `PGAP supplemental data not found` | Run `bactowise db download --pgap` (~38 GB). Use `--skip pgap` to run without it. |
 | PGAP fails with cgroups error | VM/HPC kernel issue — handled automatically. If it persists, check `results/pgap/run_<timestamp>/cwltool.log` |
 | PGAP fails with exit code 255 | Check `results/pgap/run_<timestamp>/cwltool.log` for the detailed Singularity error |
 | `No module named 'pkg_resources'` (CheckM or MEFinder) | Delete the affected env and rerun: `conda env remove -n checkm_env -y` or `conda env remove -n mefinder_env -y` |
