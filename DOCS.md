@@ -3,20 +3,21 @@
 - [User Guide](#user-guide)
   - [1. Installation](#1-installation)
   - [2. Databases](#2-databases)
-  - [3. Running the pipeline](#3-running-the-pipeline)
-  - [4. Skipping stages](#4-skipping-stages)
-  - [5. Bypassing annotation with pre-computed GFF files](#5-bypassing-annotation-with-pre-computed-gff-files)
-  - [6. Understanding QC output](#6-understanding-qc-output)
-  - [7. Stage 3 — BactoWise Consensus Engine](#7-stage-3--bactowise-consensus-engine)
-  - [8. Stage 4 — Supplementary Annotations](#8-stage-4--supplementary-annotations)
+  - [3. Cleaning up — reclaiming disk space](#3-cleaning-up--reclaiming-disk-space)
+  - [4. Running the pipeline](#4-running-the-pipeline)
+  - [5. Skipping stages](#5-skipping-stages)
+  - [6. Bypassing annotation with pre-computed GFF files](#6-bypassing-annotation-with-pre-computed-gff-files)
+  - [7. Understanding QC output](#7-understanding-qc-output)
+  - [8. Stage 3 — BactoWise Consensus Engine](#8-stage-3--bactowise-consensus-engine)
+  - [9. Stage 4 — Supplementary Annotations](#9-stage-4--supplementary-annotations)
     - [AMRFinderPlus](#amrfinderplus--antimicrobial-resistance-genes-and-point-mutations)
     - [Phigaro](#phigaro--prophage-region-detection)
     - [Platon](#platon--plasmid-contig-classification-and-characterisation)
     - [MEFinder](#mefinder-mobileelemenfinder--transposon-and-is-element-detection)
     - [EggNOG-mapper](#eggnog-mapper--go-terms-kegg-pathways-and-cog-annotation)
     - [SPIFinder](#spifinder--salmonella-pathogenicity-island-detection)
-  - [9. Downstream analysis — pangenome with Panaroo](#9-downstream-analysis--pangenome-with-panaroo)
-  - [10. Troubleshooting](#10-troubleshooting)
+  - [10. Downstream analysis — pangenome with Panaroo](#10-downstream-analysis--pangenome-with-panaroo)
+  - [11. Troubleshooting](#11-troubleshooting)
 - [Developer Guide](#developer-guide)
   - [1. pipeline.yaml field reference](#1-pipelineyaml-field-reference)
   - [2. Modifying pipeline.yaml locally](#2-modifying-pipelineyaml-locally)
@@ -183,7 +184,7 @@ bactowise db download --bakta --force-db-download
 bactowise db download --pgap --force-db-download
 bactowise db download --platon --force-db-download
 bactowise db download --eggnog --force-db-download
-bactowise db download --spifinder --force-db-download   # re-clones from Bitbucket
+bactowise db download --spifinder --force-db-download  # re-clones from Bitbucket
 ```
 
 ### Check database status
@@ -220,7 +221,133 @@ interrupted downloads resume from the last completed byte rather than restarting
 
 ---
 
-## 3. Running the pipeline
+## 3. Cleaning up — reclaiming disk space
+
+Over time, BactoWise can accumulate substantial data on disk: large database
+files, conda environments for each tool, and logs from previous runs. The
+`bactowise clean` command provides a safe way to remove these and reclaim
+disk space.
+
+### Available commands
+
+```bash
+bactowise clean database          # Delete databases (~161 GB)
+bactowise clean env               # Delete conda environments (~127 GB)
+bactowise clean all               # Delete everything above
+```
+
+**What gets deleted:**
+
+| Command | Location | Size | Description |
+|---------|----------|------|-------------|
+| `clean database` | `~/.bactowise/databases/` | ~161 GB | All downloaded database files for CheckM, Bakta, PGAP, Platon, EggNOG, Phigaro, and SPIFinder |
+| `clean env` | Conda environments with `*_env` suffix | ~127 GB | All BactoWise-managed conda environments (checkm_env, bakta_env, prokka_env, etc.) |
+
+### Confirmation and force flags
+
+All clean commands require confirmation by default. Use `--force` or `-f` to
+skip the confirmation prompt:
+
+```bash
+# Confirmation required (default):
+bactowise clean database
+bactowise clean env
+bactowise clean all
+
+# Skip confirmation:
+bactowise clean database --force
+bactowise clean env -f
+bactowise clean all --force
+```
+
+### Output examples
+
+**`bactowise clean database`**
+```
+Databases Directory
+  Location: /home/user/.bactowise/databases
+  Size:     161.3 GB
+
+Delete this directory? [y/N]: y
+  Removing databases...
+  ✓ Deleted  /home/user/.bactowise/databases
+```
+
+**`bactowise clean env`**
+```
+BactoWise Conda Environments
+  Found: 10 environment(s)
+  Total size: 127.5 GB
+
+  • bakta_env              15.32 GB
+  • checkm_env             5.67 GB
+  • consensus_env          2.41 GB
+  • amrfinderplus_env      4.12 GB
+  • eggnogmapper_env      48.21 GB
+  • mefinder_env           3.45 GB
+  • phigaro_env            6.78 GB
+  • platon_env            10.23 GB
+  • prokka_env             2.89 GB
+  • spifinder_env          0.04 GB
+
+Delete these environments? [y/N]: y
+  Removing bakta_env... ✓
+  Removing checkm_env... ✓
+  Removing consensus_env... ✓
+  [... more ...]
+
+✓ Deleted  10 environment(s)
+```
+
+**`bactowise clean all`**
+```
+Running all BactoWise clean commands
+
+[... output from each command ...]
+
+Summary
+
+  ✓ clean database        Deleted 161.3 GB
+  ✓ clean env             Deleted 10 environment(s)
+
+✓ All clean commands completed successfully
+```
+
+### Important notes
+
+- **Databases are large:** Deleting databases means you will need to re-download
+  them before running the pipeline again. Use `bactowise db download` to
+  restore them.
+- **Conda environments contain tool binaries:** Deleting environments removes
+  the installed tools. BactoWise will recreate them automatically on the next
+  run, but this takes time.
+- **AMRFinderPlus database caveat:** AMRFinderPlus stores its database inside
+  its conda environment. When you run `bactowise clean env`, the AMRFinderPlus
+  database is deleted along with the environment and will be re-downloaded on
+  the next run.
+- **MEFinder database caveat:** MEFinder's MGEdb database is bundled with its
+  pip package. When you run `bactowise clean env`, this database is deleted
+  and will be re-installed with the package on the next run.
+
+### When to clean
+
+**Clean databases when:**
+- You are finished with BactoWise and want to free up disk space
+- You need space for a different project
+- You want to force a fresh download of all databases
+
+**Clean environments when:**
+- You want to remove old tool versions before upgrading
+- You are debugging environment issues and want a clean slate
+- You need to free up disk space but want to keep databases
+
+**Clean all when:**
+- You want a complete reset of BactoWise to factory state
+- You are uninstalling BactoWise and want to remove all associated data
+
+---
+
+## 4. Running the pipeline
 
 ### Get a test genome
 
@@ -308,7 +435,7 @@ Threads  : 8  (--threads override)
 When `--threads` is not passed, the value from `pipeline.yaml` is used
 (default: 4). Individual tools can still be pinned to a specific thread
 count via their `params` block in the config — see
-[Changing the number of threads](DOCS.md#changing-the-number-of-threads)
+[Changing the number of threads](#2-modifying-pipelineyaml-locally)
 in the Developer Guide.
 
 ### Output layout
@@ -392,7 +519,7 @@ output directory or one specified with `-o`:
 
 ---
 
-## 4. Skipping stages
+## 5. Skipping stages
 
 Two stages are skippable: stage 1 (QC) and stage 4 (supplementary annotations).
 Stages 2 (annotation) and 3 (consensus) are core and cannot be skipped.
@@ -433,7 +560,7 @@ bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
 
 ---
 
-## 5. Bypassing annotation with pre-computed GFF files
+## 6. Bypassing annotation with pre-computed GFF files
 
 If you already have annotation results from a previous run — or from running
 Bakta, Prokka, or PGAP independently — you can provide those GFF files
@@ -532,7 +659,7 @@ results/
 
 ---
 
-## 6. Understanding QC output
+## 7. Understanding QC output
 
 `results/checkm/checkm_summary.tsv` contains one row per genome:
 
@@ -560,7 +687,7 @@ QC thresholds can be adjusted in the installed config (`~/.bactowise/config/pipe
 
 ---
 
-## 7. Stage 3 — BactoWise Consensus Engine
+## 8. Stage 3 — BactoWise Consensus Engine
 
 Stage 3 runs automatically after all three stage 2 annotation tools (Bakta,
 Prokka, PGAP) complete. It merges their outputs into a single high-confidence
@@ -625,7 +752,7 @@ bactowise run -f genome.fasta -n "Mycoplasmoides genitalium" \
 
 ---
 
-## 8. Stage 4 — Supplementary Annotations
+## 9. Stage 4 — Supplementary Annotations
 
 Stage 4 provides additional biological context beyond the core annotation. It
 is **skippable** with `--skip stage_4` and runs after stage 3 completes. All
