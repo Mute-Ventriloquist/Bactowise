@@ -1038,7 +1038,7 @@ increased false positives. Raising `min_cov` reduces partial hits.
 
 ---
 
-## 9. Downstream analysis — pangenome with Panaroo
+## 10. Downstream analysis — pangenome with Panaroo
 
 Panaroo is a pangenome pipeline that takes GFF annotation files as input and
 computes core and accessory genome statistics across multiple bacterial isolates.
@@ -1098,7 +1098,7 @@ all available options.
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 | Error | Fix |
 |---|---|
