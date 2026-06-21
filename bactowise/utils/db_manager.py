@@ -17,6 +17,8 @@ Usage (from CLI):
 
 from __future__ import annotations
 
+import glob
+import time
 import os
 import shutil
 import subprocess
@@ -169,15 +171,21 @@ def pgap_sif_path() -> Path | None:
     """
     Return the path to the PGAP Singularity image if it exists.
     
-    PGAP downloads its Singularity image to the cache directory. The exact
-    filename is hash-based, so we need to look for .sif files in the images
-    directory that were modified recently (when PGAP was run).
+    PGAP downloads its Singularity image to ~/.bactowise/images/ with
+    a naming pattern like pgap_YYYY-MM-DD.buildXXXX.sif
     """
     if not _IMAGES_DIR.exists():
         return None
     
-    # Look for any .sif files in the images directory
-    sif_files = list(_IMAGES_DIR.glob("*.sif"))
+    # Look for PGAP SIF files with the expected naming pattern
+    sif_files = list(_IMAGES_DIR.glob("pgap_*.sif"))
+    
+    if not sif_files:
+        # Fallback: look for any .sif file modified recently
+        now = time.time()
+        for sif in _IMAGES_DIR.glob("*.sif"):
+            if sif.stat().st_mtime > now - 3600:  # Modified in the last hour
+                sif_files.append(sif)
     
     if not sif_files:
         return None
@@ -626,20 +634,34 @@ def download_pgap(force: bool = False, data_dir: Path = _DEFAULT_PGAP_DATA_DIR) 
     env["SINGULARITY_TMPDIR"] = str(container_tmp)
     env["APPTAINER_TMPDIR"] = str(container_tmp)
 
-    result = subprocess.run([pgap_bin, "--update"], env=env, text=True)
+    # Store the original working directory
+    original_cwd = os.getcwd()
+    
+    try:
+        # Change to the images directory so PGAP saves the SIF there
+        os.chdir(_IMAGES_DIR)
+        
+        result = subprocess.run([pgap_bin, "--update"], env=env, text=True)
+        
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"pgap.py --update failed (exit {result.returncode}).\n"
+                f"Check the output above for details."
+            )
 
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"pgap.py --update failed (exit {result.returncode}).\n"
-            f"Check the output above for details."
-        )
+        if not is_pgap_present(data_dir):
+            raise RuntimeError(
+                f"pgap.py --update appeared to succeed but {_PGAP_DATA_MARKER} "
+                f"was not found at {data_dir}.\n"
+                f"Try running manually: {pgap_bin} --update"
+            )
 
-    if not is_pgap_present(data_dir):
-        raise RuntimeError(
-            f"pgap.py --update appeared to succeed but {_PGAP_DATA_MARKER} "
-            f"was not found at {data_dir}.\n"
-            f"Try running manually: {pgap_bin} --update"
-        )
+        # Move any SIF files that might have been created in the images directory
+        _move_pgap_sif_files()
+        
+    finally:
+        # Always change back to the original directory
+        os.chdir(original_cwd)
 
     print(f"\n  ✓  PGAP supplemental data ready at: {data_dir}\n")
     
@@ -651,6 +673,60 @@ def download_pgap(force: bool = False, data_dir: Path = _DEFAULT_PGAP_DATA_DIR) 
         print(f"  ℹ  PGAP Singularity image location unknown (may be cached elsewhere)\n")
     
     return data_dir
+
+
+def _move_pgap_sif_files() -> None:
+    """
+    Find and move PGAP SIF files from common locations to ~/.bactowise/images/
+    """
+    import glob
+    
+    # Common locations where PGAP might save SIF files
+    search_locations = [
+        _IMAGES_DIR,  # Where we cd'd to
+        Path.cwd(),   # Original working directory
+        Path.home(),  # Home directory
+        Path("/tmp"), # Temp directory
+    ]
+    
+    # Also search in the current directory and parent directories
+    search_locations.extend([Path.cwd().parent, Path.cwd().parent.parent])
+    
+    # Remove duplicates
+    search_locations = list(dict.fromkeys(search_locations))
+    
+    sif_files = []
+    for location in search_locations:
+        if location.exists():
+            sif_files.extend(location.glob("pgap_*.sif"))
+    
+    # Also look for any SIF files that might have been created recently
+    # (in case PGAP uses a different naming pattern)
+    for location in search_locations:
+        if location.exists():
+            # Look for any .sif files modified in the last hour
+            import time
+            now = time.time()
+            for sif in location.glob("*.sif"):
+                if sif.stat().st_mtime > now - 3600:  # Modified in the last hour
+                    if sif not in sif_files:
+                        sif_files.append(sif)
+    
+    for sif_file in sif_files:
+        if sif_file.parent == _IMAGES_DIR:
+            # Already in the right place
+            print(f"  ✓  PGAP SIF already in images directory: {sif_file.name}")
+            continue
+        
+        # Move to images directory
+        target = _IMAGES_DIR / sif_file.name
+        if target.exists():
+            # If a file with the same name exists, remove the old one
+            target.unlink()
+        
+        print(f"  Moving PGAP SIF from {sif_file.parent} to {target}")
+        shutil.move(str(sif_file), str(target))
+        print(f"  ✓  PGAP SIF moved to: {target}")
 
 
 def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path:
