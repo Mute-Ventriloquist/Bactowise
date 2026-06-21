@@ -154,7 +154,7 @@ class SPIFinderRunner(CondaToolRunner):
         pip_cmd = [
             conda_bin, "run", "--no-capture-output",
             "-n", env_name,
-            "pip", "install", "--quiet",
+            "python", "-m", "pip", "install", "--quiet",
         ] + self._PIP_DEPS
 
         result = subprocess.run(pip_cmd, text=True)
@@ -162,7 +162,7 @@ class SPIFinderRunner(CondaToolRunner):
             raise RuntimeError(
                 f"  ✗  Failed to install SPIFinder Python dependencies.\n"
                 f"     Try manually:\n"
-                f"       conda run -n {env_name} pip install {' '.join(self._PIP_DEPS)}"
+                f"       conda run -n {env_name} python -m pip install {' '.join(self._PIP_DEPS)}"
             )
 
     def _ensure_spifinder_install(self) -> None:

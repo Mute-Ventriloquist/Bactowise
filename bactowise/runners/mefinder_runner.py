@@ -94,7 +94,7 @@ class MobileElementFinderRunner(CondaToolRunner):
             conda_bin = self._find_conda_binary()
             subprocess.run(
                 [conda_bin, "run", "--no-capture-output", "-n", env_name,
-                 "pip", "install", "MobileElementFinder"],
+                 "python", "-m", "pip", "install", "MobileElementFinder"],
                 text=True,
             )
             self._write_pkg_resources_shim(env_name)
@@ -113,7 +113,7 @@ class MobileElementFinderRunner(CondaToolRunner):
         #   (pyyaml, click, attrs, tabulate all have conda-forge packages)
         _EXCLUDE = {"MobileElementFinder", "mobileelement-finder",
                     "biopython", "pyyaml", "click", "attrs", "tabulate"}
-        conda_deps = ["python=3.11", "pip", "biopython", "pyyaml", "click",
+        conda_deps = ["python=3.11", "biopython", "pyyaml", "click",
                       "attrs", "tabulate", "blast", "kma"] + [
             d for d in env_config.dependencies if d not in _EXCLUDE
         ]
@@ -140,7 +140,7 @@ class MobileElementFinderRunner(CondaToolRunner):
         pip_cmd = [
             conda_bin, "run", "--no-capture-output",
             "-n", env_name,
-            "pip", "install", "MobileElementFinder",
+            "python", "-m", "pip", "install", "MobileElementFinder",
         ]
         console.print(f"  Installing MobileElementFinder via pip...")
         console.print(f"  Running: {' '.join(pip_cmd)}\n")
@@ -151,7 +151,7 @@ class MobileElementFinderRunner(CondaToolRunner):
             raise RuntimeError(
                 f"  ✗  Failed to install MobileElementFinder via pip.\n"
                 f"     Try running manually:\n"
-                f"       conda run -n {env_name} pip install MobileElementFinder"
+                f"       conda run -n {env_name} python -m pip install MobileElementFinder"
             )
 
         # MobileElementFinder imports pkg_resources at startup but setuptools
