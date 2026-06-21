@@ -4,9 +4,9 @@ bactowise/utils/db_manager.py
 Manages downloads of all databases required by the BactoWise pipeline.
 
 Default storage location: ~/.bactowise/databases/
-  ~/.bactowise/databases/checkm/   — CheckM marker gene database (~2 GB)
-  ~/.bactowise/databases/bakta/    — Bakta annotation database, full build (~71 GB)
-  ~/.bactowise/databases/pgap/     — PGAP supplemental data (~30 GB)
+  ~/.bactowise/databases/checkm/   — CheckM marker gene database (~1.4 GB)
+  ~/.bactowise/databases/bakta/    — Bakta annotation database, full build (~84 GB)
+  ~/.bactowise/databases/pgap/     — PGAP supplemental data (~38 GB)
 
 Usage (from CLI):
     bactowise db download              # download both databases
@@ -76,7 +76,7 @@ _PLATON_DB_URL     = "https://zenodo.org/record/4066768/files/db.tar.gz"
 _PLATON_DB_TARBALL = "db.tar.gz"
 
 # EggNOG-mapper: downloaded via download_eggnog_data.py to a managed location.
-# ~20 GB total: eggnog.db (~15 GB SQLite), eggnog_proteins.dmnd (~4 GB diamond DB),
+# ~48 GB total: eggnog.db (~43 GB SQLite), eggnog_proteins.dmnd (~4 GB diamond DB),
 # eggnog.taxa.db (taxonomy). BactoWise passes --data_dir to both the download
 # script and emapper.py to keep everything under ~/.bactowise/databases/.
 _EGGNOG_DB_DIR    = Path("~/.bactowise/databases/eggnog").expanduser()
@@ -268,8 +268,8 @@ def download_eggnog(force: bool = False) -> Path:
     the bundled script has a stale hostname (eggnogdb.embl.de → 404).
     The correct URLs use eggnog5.embl.de.
 
-    Downloads ~20 GB total:
-        eggnog.db            — main annotation database (~15 GB, gzipped)
+    Downloads ~48 GB total:
+        eggnog.db            — main annotation database (~43 GB, gzipped)
         eggnog_proteins.dmnd — DIAMOND search database (~4 GB, gzipped)
         eggnog.taxa.tar.gz   — taxonomy database (small)
 
@@ -296,8 +296,8 @@ def download_eggnog(force: bool = False) -> Path:
 
     _EGGNOG_DB_DIR.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n  Downloading EggNOG databases (~20 GB) → {_EGGNOG_DB_DIR}")
-    print(f"  Note: eggnog.db is ~15 GB — this will take a while.\n")
+    print(f"\n  Downloading EggNOG databases (~48 GB) → {_EGGNOG_DB_DIR}")
+    print(f"  Note: eggnog.db is ~43 GB — this will take a while.\n")
 
     import gzip as _gzip
 
@@ -486,7 +486,7 @@ def download_all(
     db_root : parent directory for CheckM/Bakta databases
     checkm  : whether to download the CheckM database
     bakta   : whether to download the Bakta database
-    pgap    : whether to download the PGAP supplemental data (~30 GB)
+    pgap    : whether to download the PGAP supplemental data (~38 GB)
     """
     if checkm:
         download_checkm(force=force, db_root=db_root)
@@ -522,7 +522,7 @@ def download_checkm(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Pat
     dest.mkdir(parents=True, exist_ok=True)
     tarball = dest / "checkm_data.tar.gz"
 
-    print(f"\n  Downloading CheckM database (~2 GB) → {dest}")
+    print(f"\n  Downloading CheckM database (~1.4 GB) → {dest}")
     print(f"  Source: {CHECKM_DB_URL}")
 
     try:
@@ -588,7 +588,7 @@ def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path
 
     cmd = _bakta_db_download_cmd(dest_dir)
 
-    print(f"\n  Downloading Bakta database (full, ~71 GB) → {dest}")
+    print(f"\n  Downloading Bakta database (full, ~84 GB) → {dest}")
     print(f"  Running: {' '.join(cmd)}\n")
 
     result = subprocess.run(cmd, text=True)
@@ -618,7 +618,7 @@ def download_pgap(force: bool = False, data_dir: Path = _DEFAULT_PGAP_DATA_DIR) 
             already present (or if force=True). This replaces the manual
             curl/chmod/mv steps previously required.
 
-    Step 2: Run pgap.py --update to download the supplemental data (~30 GB)
+    Step 2: Run pgap.py --update to download the supplemental data (~38 GB)
             to ~/.bactowise/databases/pgap/ via PGAP_INPUT_DIR.
 
     Parameters
@@ -637,7 +637,7 @@ def download_pgap(force: bool = False, data_dir: Path = _DEFAULT_PGAP_DATA_DIR) 
 
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n  Downloading PGAP supplemental data (~30 GB) → {data_dir}")
+    print(f"\n  Downloading PGAP supplemental data (~38 GB) → {data_dir}")
     print(f"  This is a one-time step and will take a while.\n")
 
     # Set PGAP_INPUT_DIR so pgap.py downloads to our managed location.
@@ -1001,7 +1001,7 @@ def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path
 
     dest_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n  Downloading Bakta database (full, ~71 GB) → {dest}")
+    print(f"\n  Downloading Bakta database (full, ~84 GB) → {dest}")
     failures: list[str] = []
 
     for label, cmd, env in _bakta_db_download_attempts(dest_dir):
