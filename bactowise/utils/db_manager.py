@@ -50,6 +50,7 @@ _BAKTA_LEGACY_SUBDIRS = ("db-full",)
 _BAKTA_MARKER    = "bakta.db"
 _BAKTA_ENV_DIR   = Path("~/.bactowise/envs/bakta_db").expanduser()
 _RUNTIME_DIR     = Path("~/.bactowise/runtime").expanduser()
+_IMAGES_DIR      = Path("~/.bactowise/images").expanduser()
 
 # PGAP: pgap.py --update downloads data to wherever PGAP_INPUT_DIR points.
 # BactoWise sets PGAP_INPUT_DIR to ~/.bactowise/databases/pgap/ during download
@@ -162,6 +163,27 @@ def is_pgap_present(data_dir: Path = _DEFAULT_PGAP_DATA_DIR) -> bool:
         return False
     import glob
     return bool(glob.glob(str(data_dir / "input-*.build*")))
+
+
+def pgap_sif_path() -> Path | None:
+    """
+    Return the path to the PGAP Singularity image if it exists.
+    
+    PGAP downloads its Singularity image to the cache directory. The exact
+    filename is hash-based, so we need to look for .sif files in the images
+    directory that were modified recently (when PGAP was run).
+    """
+    if not _IMAGES_DIR.exists():
+        return None
+    
+    # Look for any .sif files in the images directory
+    sif_files = list(_IMAGES_DIR.glob("*.sif"))
+    
+    if not sif_files:
+        return None
+    
+    # If there are multiple, return the most recently modified one
+    return max(sif_files, key=lambda p: p.stat().st_mtime)
 
 
 def phigaro_db_path() -> Path:
@@ -345,6 +367,9 @@ def download_eggnog(force: bool = False) -> Path:
 
     print(f"  ✓  EggNOG database ready at: {_EGGNOG_DB_DIR}\n")
     return _EGGNOG_DB_DIR
+
+
+def amrfinderplus_db_path() -> Path | None:
     """
     Return the path to the AMRFinderPlus database directory if found, or None.
 
@@ -555,61 +580,6 @@ def download_checkm(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Pat
     return dest
 
 
-def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path:
-    """
-    Download the Bakta full database using bakta_db.
-
-    Since Bakta runs inside a Singularity container (not installed in the
-    BactoWise conda environment), bakta_db is invoked in one of two ways:
-
-    1. Via the Bakta Singularity SIF — preferred, and works even if bakta is
-       not installed as a conda package.
-    2. Via bakta_db on PATH — fallback for Docker-based setups where bakta
-       is installed in the active conda environment.
-
-    Parameters
-    ----------
-    force   : re-download even if the database appears complete
-    db_root : parent directory for all BactoWise databases
-    """
-    dest_dir = db_root / "bakta"
-    dest     = bakta_db_path(db_root)   # preferred full DB path inside dest_dir
-
-    if is_bakta_present(db_root) and not force:
-        print(f"  ✓  Bakta database already present at: {dest}")
-        print(f"     (use --force-db-download to re-download)")
-        return dest
-
-    if force and dest_dir.exists():
-        print(f"  Removing existing Bakta database at: {dest_dir}")
-        shutil.rmtree(dest_dir)
-
-    dest_dir.mkdir(parents=True, exist_ok=True)
-
-    cmd = _bakta_db_download_cmd(dest_dir)
-
-    print(f"\n  Downloading Bakta database (full, ~71 GB) → {dest}")
-    print(f"  Running: {' '.join(cmd)}\n")
-
-    result = subprocess.run(cmd, text=True)
-
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"bakta_db download failed (exit {result.returncode}).\n"
-            f"Check the output above for details."
-        )
-
-    if not is_bakta_present(db_root):
-        raise RuntimeError(
-            f"Bakta download appeared to succeed but {_BAKTA_MARKER} was not "
-            f"found inside {dest}.\n"
-            f"The bakta_db output structure may have changed."
-        )
-
-    print(f"\n  ✓  Bakta database ready at: {dest}\n")
-    return dest
-
-
 def download_pgap(force: bool = False, data_dir: Path = _DEFAULT_PGAP_DATA_DIR) -> Path:
     """
     Download the pgap.py wrapper script and the PGAP supplemental data.
@@ -640,10 +610,21 @@ def download_pgap(force: bool = False, data_dir: Path = _DEFAULT_PGAP_DATA_DIR) 
     print(f"\n  Downloading PGAP supplemental data (~30 GB) → {data_dir}")
     print(f"  This is a one-time step and will take a while.\n")
 
-    # Set PGAP_INPUT_DIR so pgap.py downloads to our managed location.
-    # pgap.py respects this env var as of its 2022 release.
-    import os
+    # Set up environment with both PGAP and container cache directories
     env = {**os.environ, "PGAP_INPUT_DIR": str(data_dir)}
+    
+    # Ensure the images directory exists for SIF storage
+    _IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    
+    # Add container cache directory to control where SIF files are stored
+    env["SINGULARITY_CACHEDIR"] = str(_IMAGES_DIR)
+    env["APPTAINER_CACHEDIR"] = str(_IMAGES_DIR)
+    
+    # Also set a temp directory within our managed space
+    container_tmp = _RUNTIME_DIR / "container-tmp"
+    container_tmp.mkdir(parents=True, exist_ok=True)
+    env["SINGULARITY_TMPDIR"] = str(container_tmp)
+    env["APPTAINER_TMPDIR"] = str(container_tmp)
 
     result = subprocess.run([pgap_bin, "--update"], env=env, text=True)
 
@@ -661,321 +642,15 @@ def download_pgap(force: bool = False, data_dir: Path = _DEFAULT_PGAP_DATA_DIR) 
         )
 
     print(f"\n  ✓  PGAP supplemental data ready at: {data_dir}\n")
+    
+    # Report SIF location if it exists
+    sif_path = pgap_sif_path()
+    if sif_path:
+        print(f"  ✓  PGAP Singularity image stored at: {sif_path}\n")
+    else:
+        print(f"  ℹ  PGAP Singularity image location unknown (may be cached elsewhere)\n")
+    
     return data_dir
-
-
-def _ensure_pgap_wrapper(force: bool = False) -> str:
-    """
-    Ensure pgap.py is available, downloading it to ~/.bactowise/bin/ if needed.
-
-    Checks in order:
-    1. Already on PATH (e.g. user installed it manually) — use as-is.
-    2. Previously downloaded to ~/.bactowise/bin/pgap.py — use that.
-    3. Neither found (or force=True) — download from NCBI GitHub.
-
-    Returns the path to the pgap.py binary.
-    """
-    # Already on PATH — use it directly
-    on_path = shutil.which("pgap.py") or shutil.which("pgap")
-    if on_path and not force:
-        print(f"  ✓  pgap.py found on PATH: {on_path}")
-        return on_path
-
-    managed = _PGAP_BIN_DIR / "pgap.py"
-
-    if managed.exists() and not force:
-        print(f"  ✓  pgap.py already downloaded: {managed}")
-        return str(managed)
-
-    # Download from NCBI
-    _PGAP_BIN_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"  Downloading pgap.py wrapper → {managed}")
-    print(f"  Source: {_PGAP_WRAPPER_URL}\n")
-
-    try:
-        urllib.request.urlretrieve(_PGAP_WRAPPER_URL, managed)
-    except Exception as e:
-        managed.unlink(missing_ok=True)
-        raise RuntimeError(
-            f"Failed to download pgap.py: {e}\n"
-            f"Check your network connection and try again."
-        ) from e
-
-    # Make executable
-    import stat
-    managed.chmod(managed.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    print(f"  ✓  pgap.py downloaded and made executable: {managed}\n")
-    return str(managed)
-
-
-def _bakta_db_download_cmd(dest_dir: Path) -> list[str]:
-    """
-    Build the command to run bakta_db download.
-
-    Tries in order:
-    1. Singularity/Apptainer + bakta SIF — pulls the SIF automatically if missing.
-    2. Docker + bakta image — pulls the image automatically if missing.
-    3. bakta_db on PATH — fallback for conda-based setups.
-
-    Raises RuntimeError if none of the above are available.
-    """
-    # ── Option 1: Singularity/Apptainer ──────────────────────────────────────
-    singularity_bin = shutil.which("singularity") or shutil.which("apptainer")
-    if singularity_bin:
-        sif = _bakta_sif_path()
-        if not sif.exists():
-            _pull_bakta_sif(singularity_bin, sif)
-        print(f"  Using Singularity image: {sif}")
-        # Run via /bin/bash -c so the shell inherits the container's PATH,
-        # making bakta_db available. Matches the approach in Bakta's own docs.
-        return [
-            singularity_bin, "exec",
-            "--bind", f"{dest_dir}:/db_output:rw",
-            str(sif),
-            "/bin/bash", "-c",
-            "bakta_db download --output /db_output --type full",
-        ]
-
-    # ── Option 2: Docker ─────────────────────────────────────────────────────
-    if shutil.which("docker"):
-        image_ref = _bakta_image_ref()
-        _ensure_docker_image(image_ref)
-        print(f"  Using Docker image: {image_ref}")
-        # Same /bin/bash -c approach as recommended in Bakta's official docs:
-        # docker run -v ... --entrypoint /bin/bash image -c "bakta_db download ..."
-        return [
-            "docker", "run", "--rm",
-            "--volume", f"{dest_dir}:/db_output",
-            "--entrypoint", "/bin/bash",
-            image_ref,
-            "-c", "bakta_db download --output /db_output --type full",
-        ]
-
-    # ── Option 3: bakta_db on PATH ────────────────────────────────────────────
-    if shutil.which("bakta_db"):
-        return ["bakta_db", "download", "--output", str(dest_dir), "--type", "full"]
-
-    # ── Nothing available ─────────────────────────────────────────────────────
-    raise RuntimeError(
-        "Cannot download Bakta database — no container runtime found.\n\n"
-        "Option A (Singularity/Apptainer — recommended for HPC):\n"
-        "  sudo add-apt-repository -y ppa:apptainer/ppa\n"
-        "  sudo apt update && sudo apt install apptainer\n"
-        "  bactowise db download --bakta\n\n"
-        "Option B (Docker — for local workstations):\n"
-        "  Install Docker Desktop from https://docker.com\n"
-        "  bactowise db download --bakta\n\n"
-        "Option C (conda):\n"
-        "  conda install -c bioconda bakta\n"
-        "  bactowise db download --bakta"
-    )
-
-
-def _bakta_image_ref() -> str:
-    """
-    Read the Bakta image reference from the bundled pipeline.yaml.
-
-    This is the single source of truth for the Bakta version — updating
-    bactowise/config/pipeline.yaml is the only change needed when bumping
-    the Bakta version.
-    """
-    import yaml
-    from bactowise.utils.config_manager import bundled_config_path
-    config = yaml.safe_load(bundled_config_path().read_text())
-    for tool in config.get("tools", []):
-        if tool.get("name") == "bakta":
-            image = tool.get("image")
-            if image:
-                return image
-    raise RuntimeError(
-        "Could not find bakta image reference in bundled pipeline.yaml. "
-        "The bundled config may be malformed."
-    )
-
-
-def _pull_bakta_sif(singularity_bin: str, sif: Path) -> None:
-    """
-    Pull the Bakta Docker image as a SIF file.
-    Called automatically by _bakta_db_download_cmd when the SIF is missing.
-    """
-    image_ref = _bakta_image_ref()
-    uri       = f"docker://{image_ref}"
-
-    sif.parent.mkdir(parents=True, exist_ok=True)
-
-    print(f"\n  Bakta SIF not found — pulling image first.")
-    print(f"  Source : {uri}")
-    print(f"  Dest   : {sif}")
-    print(f"  This is a one-time step and may take several minutes.\n")
-
-    result = subprocess.run(
-        [singularity_bin, "pull", str(sif), uri],
-        text=True,
-    )
-
-    if result.returncode != 0 or not sif.exists():
-        sif.unlink(missing_ok=True)
-        raise RuntimeError(
-            f"Failed to pull Bakta Singularity image.\n"
-            f"Try manually: {singularity_bin} pull {sif} {uri}"
-        )
-
-    print(f"\n  ✓  Bakta SIF pulled: {sif}")
-
-
-def _bakta_sif_path() -> Path:
-    """
-    Return the expected local path of the Bakta SIF file, derived from the
-    image reference in the bundled pipeline.yaml.
-
-    oschwengers/bakta:v1.12.0 → ~/.bactowise/images/oschwengers_bakta_v1.12.0.sif
-    """
-    safe_name = _bakta_image_ref().replace("/", "_").replace(":", "_")
-    return Path("~/.bactowise/images").expanduser() / f"{safe_name}.sif"
-
-
-def _ensure_docker_image(image_ref: str) -> None:
-    """
-    Pull the Bakta Docker image if it is not already present locally.
-    """
-    # Check if the image exists locally without making a network call
-    check = subprocess.run(
-        ["docker", "image", "inspect", image_ref],
-        capture_output=True,
-        text=True,
-    )
-    if check.returncode == 0:
-        print(f"  Docker image already present: {image_ref}")
-        return
-
-    print(f"\n  Bakta Docker image not found — pulling now.")
-    print(f"  Image : {image_ref}")
-    print(f"  This is a one-time step and may take several minutes.\n")
-
-    result = subprocess.run(["docker", "pull", image_ref], text=True)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"Failed to pull Bakta Docker image: {image_ref}\n"
-            f"Make sure Docker is running and try again."
-        )
-    print(f"\n  ✓  Docker image pulled: {image_ref}")
-
-
-# ── Internal helpers ──────────────────────────────────────────────────────────
-
-def _download_with_progress(url: str, dest: Path) -> None:
-    """
-    Download a URL to dest with a simple terminal progress indicator.
-    Uses only stdlib (urllib) — no extra dependencies.
-    """
-    def _reporthook(count: int, block_size: int, total_size: int) -> None:
-        if total_size <= 0:
-            mb_done = count * block_size / 1024 / 1024
-            print(f"\r  Downloaded {mb_done:.1f} MB…", end="", flush=True)
-        else:
-            pct      = min(count * block_size * 100 / total_size, 100)
-            mb_done  = count * block_size / 1024 / 1024
-            mb_total = total_size / 1024 / 1024
-            bar_len  = 30
-            filled   = int(bar_len * pct / 100)
-            bar      = "█" * filled + "░" * (bar_len - filled)
-            print(
-                f"\r  [{bar}] {pct:5.1f}%  {mb_done:.0f}/{mb_total:.0f} MB",
-                end="",
-                flush=True,
-            )
-
-    urllib.request.urlretrieve(url, dest, reporthook=_reporthook)
-    print()  # newline after progress bar finishes
-
-
-def _download_resumable(url: str, dest: Path, max_retries: int = 10) -> None:
-    """
-    Download a URL to dest with resume support and automatic retries.
-
-    Uses HTTP Range requests to continue from the byte offset already
-    written to disk. This means a network dropout at 90% does not restart
-    from zero — the next attempt picks up where it left off.
-
-    Retries up to max_retries times with a short backoff between attempts.
-    Falls back to a full (non-resumable) download on the first attempt if
-    the server does not support Range requests.
-    """
-    import time
-
-    attempt  = 0
-    backoff  = 5  # seconds between retries
-
-    while attempt < max_retries:
-        attempt += 1
-        existing = dest.stat().st_size if dest.exists() else 0
-
-        try:
-            req = urllib.request.Request(url)
-            if existing:
-                req.add_header("Range", f"bytes={existing}-")
-
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                total_size   = int(resp.headers.get("Content-Length", 0))
-                is_partial   = resp.status == 206  # HTTP 206 Partial Content
-                total_bytes  = (existing + total_size) if is_partial else total_size
-
-                mode = "ab" if is_partial else "wb"
-                if is_partial:
-                    print(
-                        f"\r  Resuming from {existing / 1024**2:.0f} MB "
-                        f"(attempt {attempt}/{max_retries})...",
-                        flush=True,
-                    )
-                elif attempt > 1:
-                    print(
-                        f"\r  Restarting download "
-                        f"(attempt {attempt}/{max_retries}, server does not support resume)...",
-                        flush=True,
-                    )
-
-                written = existing if is_partial else 0
-                bar_len = 30
-
-                with open(dest, mode) as f:
-                    while True:
-                        chunk = resp.read(1024 * 1024)  # 1 MB chunks
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        written += len(chunk)
-
-                        if total_bytes > 0:
-                            pct    = min(written * 100 / total_bytes, 100)
-                            filled = int(bar_len * pct / 100)
-                            bar    = "█" * filled + "░" * (bar_len - filled)
-                            print(
-                                f"\r  [{bar}] {pct:5.1f}%  "
-                                f"{written / 1024**2:.0f}/{total_bytes / 1024**2:.0f} MB",
-                                end="", flush=True,
-                            )
-                        else:
-                            print(
-                                f"\r  Downloaded {written / 1024**2:.0f} MB…",
-                                end="", flush=True,
-                            )
-
-            print()  # newline after progress bar
-            return  # success
-
-        except Exception as e:
-            print()  # newline after partial progress bar
-            if attempt < max_retries:
-                print(
-                    f"  ⚠  Download interrupted: {e}\n"
-                    f"  Retrying in {backoff}s (attempt {attempt}/{max_retries})..."
-                )
-                time.sleep(backoff)
-                backoff = min(backoff * 2, 60)  # exponential backoff, cap at 60s
-            else:
-                raise RuntimeError(
-                    f"Download failed after {max_retries} attempts: {e}"
-                ) from e
 
 
 def download_bakta(force: bool = False, db_root: Path = DEFAULT_DB_ROOT) -> Path:
@@ -1100,8 +775,8 @@ def _bakta_db_download_attempts(dest_dir: Path) -> list[tuple[str, list[str], di
 
 def _container_runtime_env() -> dict[str, str]:
     """
-    Keep container cache and temp data under ~/.bactowise/ so Bakta DB
-    downloads are self-contained and less dependent on host temp directories.
+    Keep container cache and temp data under ~/.bactowise/ so container
+    operations are self-contained and less dependent on host temp directories.
     """
     cache_dir = _RUNTIME_DIR / "container-cache"
     tmp_dir   = _RUNTIME_DIR / "container-tmp"
@@ -1113,6 +788,12 @@ def _container_runtime_env() -> dict[str, str]:
     env["APPTAINER_TMPDIR"]     = str(tmp_dir)
     env["SINGULARITY_CACHEDIR"] = str(cache_dir)
     env["SINGULARITY_TMPDIR"]   = str(tmp_dir)
+    
+    # Add the images directory for SIF storage
+    _IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    env["SINGULARITY_IMAGEDIR"] = str(_IMAGES_DIR)
+    env["APPTAINER_IMAGEDIR"] = str(_IMAGES_DIR)
+    
     return env
 
 
@@ -1208,3 +889,317 @@ def _bakta_tool_version() -> str | None:
         if tool.get("name") == "bakta":
             return tool.get("version")
     return None
+
+
+def _bakta_sif_path() -> Path:
+    """
+    Return the expected local path of the Bakta SIF file, derived from the
+    image reference in the bundled pipeline.yaml.
+
+    oschwengers/bakta:v1.12.0 → ~/.bactowise/images/oschwengers_bakta_v1.12.0.sif
+    """
+    safe_name = _bakta_image_ref().replace("/", "_").replace(":", "_")
+    return _IMAGES_DIR / f"{safe_name}.sif"
+
+
+def _bakta_image_ref() -> str:
+    """
+    Read the Bakta image reference from the bundled pipeline.yaml.
+
+    This is the single source of truth for the Bakta version — updating
+    bactowise/config/pipeline.yaml is the only change needed when bumping
+    the Bakta version.
+    """
+    import yaml
+    from bactowise.utils.config_manager import bundled_config_path
+    config = yaml.safe_load(bundled_config_path().read_text())
+    for tool in config.get("tools", []):
+        if tool.get("name") == "bakta":
+            image = tool.get("image")
+            if image:
+                return image
+    raise RuntimeError(
+        "Could not find bakta image reference in bundled pipeline.yaml. "
+        "The bundled config may be malformed."
+    )
+
+
+def _pull_bakta_sif(singularity_bin: str, sif: Path) -> None:
+    """
+    Pull the Bakta Docker image as a SIF file.
+    Called automatically by _bakta_db_download_cmd when the SIF is missing.
+    """
+    image_ref = _bakta_image_ref()
+    uri       = f"docker://{image_ref}"
+
+    sif.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n  Bakta SIF not found — pulling image first.")
+    print(f"  Source : {uri}")
+    print(f"  Dest   : {sif}")
+    print(f"  This is a one-time step and may take several minutes.\n")
+
+    result = subprocess.run(
+        [singularity_bin, "pull", str(sif), uri],
+        text=True,
+    )
+
+    if result.returncode != 0 or not sif.exists():
+        sif.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Failed to pull Bakta Singularity image.\n"
+            f"Try manually: {singularity_bin} pull {sif} {uri}"
+        )
+
+    print(f"\n  ✓  Bakta SIF pulled: {sif}")
+
+
+def _ensure_docker_image(image_ref: str) -> None:
+    """
+    Pull the Bakta Docker image if it is not already present locally.
+    """
+    # Check if the image exists locally without making a network call
+    check = subprocess.run(
+        ["docker", "image", "inspect", image_ref],
+        capture_output=True,
+        text=True,
+    )
+    if check.returncode == 0:
+        print(f"  Docker image already present: {image_ref}")
+        return
+
+    print(f"\n  Bakta Docker image not found — pulling now.")
+    print(f"  Image : {image_ref}")
+    print(f"  This is a one-time step and may take several minutes.\n")
+
+    result = subprocess.run(["docker", "pull", image_ref], text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to pull Bakta Docker image: {image_ref}\n"
+            f"Make sure Docker is running and try again."
+        )
+    print(f"\n  ✓  Docker image pulled: {image_ref}")
+
+
+def _bakta_db_download_cmd(dest_dir: Path) -> list[str]:
+    """
+    Build the command to run bakta_db download.
+
+    Tries in order:
+    1. Singularity/Apptainer + bakta SIF — pulls the SIF automatically if missing.
+    2. Docker + bakta image — pulls the image automatically if missing.
+    3. bakta_db on PATH — fallback for conda-based setups.
+
+    Raises RuntimeError if none of the above are available.
+    """
+    # ── Option 1: Singularity/Apptainer ──────────────────────────────────────
+    singularity_bin = shutil.which("singularity") or shutil.which("apptainer")
+    if singularity_bin:
+        sif = _bakta_sif_path()
+        if not sif.exists():
+            _pull_bakta_sif(singularity_bin, sif)
+        print(f"  Using Singularity image: {sif}")
+        # Run via /bin/bash -c so the shell inherits the container's PATH,
+        # making bakta_db available. Matches the approach in Bakta's own docs.
+        return [
+            singularity_bin, "exec",
+            "--bind", f"{dest_dir}:/db_output:rw",
+            str(sif),
+            "/bin/bash", "-c",
+            "bakta_db download --output /db_output --type full",
+        ]
+
+    # ── Option 2: Docker ─────────────────────────────────────────────────────
+    if shutil.which("docker"):
+        image_ref = _bakta_image_ref()
+        _ensure_docker_image(image_ref)
+        print(f"  Using Docker image: {image_ref}")
+        # Same /bin/bash -c approach as recommended in Bakta's official docs:
+        # docker run -v ... --entrypoint /bin/bash image -c "bakta_db download ..."
+        return [
+            "docker", "run", "--rm",
+            "--volume", f"{dest_dir}:/db_output",
+            "--entrypoint", "/bin/bash",
+            image_ref,
+            "-c", "bakta_db download --output /db_output --type full",
+        ]
+
+    # ── Option 3: bakta_db on PATH ────────────────────────────────────────────
+    if shutil.which("bakta_db"):
+        return ["bakta_db", "download", "--output", str(dest_dir), "--type", "full"]
+
+    # ── Nothing available ─────────────────────────────────────────────────────
+    raise RuntimeError(
+        "Cannot download Bakta database — no container runtime found.\n\n"
+        "Option A (Singularity/Apptainer — recommended for HPC):\n"
+        "  sudo add-apt-repository -y ppa:apptainer/ppa\n"
+        "  sudo apt update && sudo apt install apptainer\n"
+        "  bactowise db download --bakta\n\n"
+        "Option B (Docker — for local workstations):\n"
+        "  Install Docker Desktop from https://docker.com\n"
+        "  bactowise db download --bakta\n\n"
+        "Option C (conda):\n"
+        "  conda install -c bioconda bakta\n"
+        "  bactowise db download --bakta"
+    )
+
+
+# ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _download_with_progress(url: str, dest: Path) -> None:
+    """
+    Download a URL to dest with a simple terminal progress indicator.
+    Uses only stdlib (urllib) — no extra dependencies.
+    """
+    def _reporthook(count: int, block_size: int, total_size: int) -> None:
+        if total_size <= 0:
+            mb_done = count * block_size / 1024 / 1024
+            print(f"\r  Downloaded {mb_done:.1f} MB…", end="", flush=True)
+        else:
+            pct      = min(count * block_size * 100 / total_size, 100)
+            mb_done  = count * block_size / 1024 / 1024
+            mb_total = total_size / 1024 / 1024
+            bar_len  = 30
+            filled   = int(bar_len * pct / 100)
+            bar      = "█" * filled + "░" * (bar_len - filled)
+            print(
+                f"\r  [{bar}] {pct:5.1f}%  {mb_done:.0f}/{mb_total:.0f} MB",
+                end="",
+                flush=True,
+            )
+
+    urllib.request.urlretrieve(url, dest, reporthook=_reporthook)
+    print()  # newline after progress bar finishes
+
+
+def _download_resumable(url: str, dest: Path, max_retries: int = 10) -> None:
+    """
+    Download a URL to dest with resume support and automatic retries.
+
+    Uses HTTP Range requests to continue from the byte offset already
+    written to disk. This means a network dropout at 90% does not restart
+    from zero — the next attempt picks up where it left off.
+
+    Retries up to max_retries times with a short backoff between attempts.
+    Falls back to a full (non-resumable) download on the first attempt if
+    the server does not support Range requests.
+    """
+    import time
+
+    attempt  = 0
+    backoff  = 5  # seconds between retries
+
+    while attempt < max_retries:
+        attempt += 1
+        existing = dest.stat().st_size if dest.exists() else 0
+
+        try:
+            req = urllib.request.Request(url)
+            if existing:
+                req.add_header("Range", f"bytes={existing}-")
+
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                total_size   = int(resp.headers.get("Content-Length", 0))
+                is_partial   = resp.status == 206  # HTTP 206 Partial Content
+                total_bytes  = (existing + total_size) if is_partial else total_size
+
+                mode = "ab" if is_partial else "wb"
+                if is_partial:
+                    print(
+                        f"\r  Resuming from {existing / 1024**2:.0f} MB "
+                        f"(attempt {attempt}/{max_retries})...",
+                        flush=True,
+                    )
+                elif attempt > 1:
+                    print(
+                        f"\r  Restarting download "
+                        f"(attempt {attempt}/{max_retries}, server does not support resume)...",
+                        flush=True,
+                    )
+
+                written = existing if is_partial else 0
+                bar_len = 30
+
+                with open(dest, mode) as f:
+                    while True:
+                        chunk = resp.read(1024 * 1024)  # 1 MB chunks
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        written += len(chunk)
+
+                        if total_bytes > 0:
+                            pct    = min(written * 100 / total_bytes, 100)
+                            filled = int(bar_len * pct / 100)
+                            bar    = "█" * filled + "░" * (bar_len - filled)
+                            print(
+                                f"\r  [{bar}] {pct:5.1f}%  "
+                                f"{written / 1024**2:.0f}/{total_bytes / 1024**2:.0f} MB",
+                                end="", flush=True,
+                            )
+                        else:
+                            print(
+                                f"\r  Downloaded {written / 1024**2:.0f} MB…",
+                                end="", flush=True,
+                            )
+
+            print()  # newline after progress bar
+            return  # success
+
+        except Exception as e:
+            print()  # newline after partial progress bar
+            if attempt < max_retries:
+                print(
+                    f"  ⚠  Download interrupted: {e}\n"
+                    f"  Retrying in {backoff}s (attempt {attempt}/{max_retries})..."
+                )
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 60)  # exponential backoff, cap at 60s
+            else:
+                raise RuntimeError(
+                    f"Download failed after {max_retries} attempts: {e}"
+                ) from e
+
+
+def _ensure_pgap_wrapper(force: bool = False) -> str:
+    """
+    Ensure pgap.py is available, downloading it to ~/.bactowise/bin/ if needed.
+
+    Checks in order:
+    1. Already on PATH (e.g. user installed it manually) — use as-is.
+    2. Previously downloaded to ~/.bactowise/bin/pgap.py — use that.
+    3. Neither found (or force=True) — download from NCBI GitHub.
+
+    Returns the path to the pgap.py binary.
+    """
+    # Already on PATH — use it directly
+    on_path = shutil.which("pgap.py") or shutil.which("pgap")
+    if on_path and not force:
+        print(f"  ✓  pgap.py found on PATH: {on_path}")
+        return on_path
+
+    managed = _PGAP_BIN_DIR / "pgap.py"
+
+    if managed.exists() and not force:
+        print(f"  ✓  pgap.py already downloaded: {managed}")
+        return str(managed)
+
+    # Download from NCBI
+    _PGAP_BIN_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"  Downloading pgap.py wrapper → {managed}")
+    print(f"  Source: {_PGAP_WRAPPER_URL}\n")
+
+    try:
+        urllib.request.urlretrieve(_PGAP_WRAPPER_URL, managed)
+    except Exception as e:
+        managed.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Failed to download pgap.py: {e}\n"
+            f"Check your network connection and try again."
+        ) from e
+
+    # Make executable
+    import stat
+    managed.chmod(managed.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    print(f"  ✓  pgap.py downloaded and made executable: {managed}\n")
+    return str(managed)
