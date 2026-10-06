@@ -179,94 +179,50 @@ def normalize_seq_label(seq_id: str) -> str:
     return seq
 
 
-def preferred_seq_id(seq_ids: list[str]) -> str:
-    def rank(seq_id: str) -> tuple[int, int, str]:
-        seq = str(seq_id)
-        if seq.startswith("CP"):
-            return (0, len(seq), seq)
-        if seq.startswith("NC_"):
-            return (2, len(seq), seq)
-        return (1, len(seq), seq)
-
-    return sorted(seq_ids, key=rank)[0]
-
-
 def harmonize_sequence_ids(df: pd.DataFrame, genome: dict) -> tuple[pd.DataFrame, dict]:
     """
     Align contig IDs across GFF and FASTA inputs.
 
     The ST474 inputs mix GenBank (`CP...`), RefSeq (`NC_...`), and FASTA-style
     headers (`*.fasta`) for the same replicons. We normalize by direct label
-    match first, then by unique contig length.
+    match first, then by a uniquely closest contig length. Similar lengths
+    alone are not enough to merge contig IDs because bacterial replicons can
+    have nearly identical sizes.
     """
     df = df.copy()
-    genome_lengths = {seq_id: len(seq) for seq_id, seq in genome.items()}
-    genome_by_norm: dict[str, list[str]] = {}
-    for seq_id in genome_lengths:
-        genome_by_norm.setdefault(normalize_seq_label(seq_id), []).append(seq_id)
+    genome_ids_by_norm: dict[str, list[str]] = {}
+    for genome_id in genome:
+        genome_ids_by_norm.setdefault(normalize_seq_label(genome_id), []).append(genome_id)
 
-    seq_lengths = (
-        df.groupby("Sequence_ID", dropna=False)["End"]
-        .max()
-        .astype(int)
-        .to_dict()
-    )
-    length_clusters: list[dict] = []
-    for seq_id, seq_len in sorted(seq_lengths.items(), key=lambda item: item[1], reverse=True):
-        seq_str = str(seq_id)
-        seq_len = int(seq_len)
-        matched = None
-        for cluster in length_clusters:
-            if abs(cluster["rep_len"] - seq_len) <= 5000:
-                matched = cluster
-                break
-        if matched is None:
-            matched = {"rep_len": seq_len, "seq_ids": []}
-            length_clusters.append(matched)
-        matched["seq_ids"].append(seq_str)
-        matched["rep_len"] = max(matched["rep_len"], seq_len)
-
+    # Compare each annotated contig with the actual FASTA contigs independently.
+    # Clustering GFF contigs by similar lengths can collapse distinct plasmids
+    # into one ID (common for similarly sized replicons), leaving no matching
+    # sequence for FAA extraction.
+    seq_lengths = df.groupby("Sequence_ID", dropna=False)["End"].max().astype(int).to_dict()
+    genome_lengths = {genome_id: len(seq) for genome_id, seq in genome.items()}
     seq_map: dict[str, str] = {}
-    canonical_lengths: list[tuple[str, int]] = []
-    for cluster in length_clusters:
-        canonical = preferred_seq_id(cluster["seq_ids"])
-        cluster["canonical"] = canonical
-        cluster["canonical_len"] = max(seq_lengths[seq_id] for seq_id in cluster["seq_ids"])
-        canonical_lengths.append((canonical, int(cluster["canonical_len"])))
-        for seq_id in cluster["seq_ids"]:
-            seq_map[seq_id] = canonical
+    for raw_seq_id, annotated_length in seq_lengths.items():
+        seq_id = str(raw_seq_id)
+        exact = genome_ids_by_norm.get(normalize_seq_label(seq_id), [])
+        if len(exact) == 1:
+            seq_map[seq_id] = exact[0]
+            continue
 
-    genome_map: dict[str, str] = {}
-    genome_target_counts: Counter = Counter()
-    for genome_id, genome_len in genome_lengths.items():
-        norm = normalize_seq_label(genome_id)
-        candidates = []
-        for cluster in length_clusters:
-            for seq_id in cluster["seq_ids"]:
-                if normalize_seq_label(seq_id) == norm:
-                    candidates.append(seq_id)
-        if len(candidates) == 1:
-            target = candidates[0]
-        elif canonical_lengths:
-            target = min(
-                canonical_lengths,
-                key=lambda item: abs(item[1] - int(genome_len))
-            )[0]
+        # GFF ends can fall short of the contig length, so use the closest
+        # length only when it is clearly a unique match within 5 kb.
+        ranked = sorted(
+            (abs(genome_length - int(annotated_length)), genome_id)
+            for genome_id, genome_length in genome_lengths.items()
+        )
+        if ranked and ranked[0][0] <= 5000 and (
+            len(ranked) == 1 or ranked[0][0] < ranked[1][0]
+        ):
+            seq_map[seq_id] = ranked[0][1]
         else:
-            target = genome_id
-        genome_target_counts[target] += 1
-        genome_map[genome_id] = target
-
-    normalized_genome = {}
-    for genome_id, seq in genome.items():
-        target = genome_map[genome_id]
-        if genome_target_counts[target] == 1:
-            normalized_genome[target] = seq
-        else:
-            normalized_genome[genome_id] = seq
+            seq_map[seq_id] = seq_id
 
     df["Sequence_ID"] = df["Sequence_ID"].astype(str).map(lambda x: seq_map.get(x, x))
-    return df, normalized_genome
+    return df, genome
 
 
 # ==============================================================================
@@ -1401,6 +1357,14 @@ def write_faa(df: pd.DataFrame, genome: dict, output_folder: str, prefix: str):
         f"{f', {skipped_no_seq} skipped (no FASTA seq)' if skipped_no_seq else ''}"
         f"{f', {skipped_no_aa} skipped (translation failed)' if skipped_no_aa else ''})"
     )
+    if written == 0:
+        raise RuntimeError(
+            f"No protein sequences could be written to {out_path}. "
+            f"Eligible CDS rows: {len(high_conf_cds)}; "
+            f"missing matching genome sequences: {skipped_no_seq}; "
+            f"failed translations: {skipped_no_aa}. "
+            "Check that the annotation GFF contig IDs match the input genome FASTA."
+        )
     return out_path
 
 
