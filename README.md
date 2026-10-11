@@ -32,10 +32,18 @@ sudo add-apt-repository -y ppa:apptainer/ppa && sudo apt update && sudo apt inst
 
 ## Install
 
+Build from a published release tag (replace `v0.1.0` with the release you
+want):
+
 ```bash
+git clone --branch v0.1.0 --depth 1 https://github.com/Mute-Ventriloquist/Bactowise.git
+cd Bactowise
 conda build conda_recipe/ -c bioconda -c conda-forge
 conda install --use-local bactowise -c bioconda -c conda-forge
 ```
+
+This builds the Conda package locally from the release source. It does not
+install a prebuilt package from a Conda channel.
 
 > WSL users: if `conda build` fails with a syntax error, see [Installation](DOCS.md#1-installation).
 
