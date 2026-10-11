@@ -39,11 +39,14 @@ want):
 git clone --branch v0.1.0 --depth 1 https://github.com/Mute-Ventriloquist/Bactowise.git
 cd Bactowise
 conda build conda_recipe/ -c bioconda -c conda-forge
+conda create -n bactowise-test python=3.12
+conda activate bactowise-test
 conda install --use-local bactowise -c bioconda -c conda-forge
 ```
 
-This builds the Conda package locally from the release source. It does not
-install a prebuilt package from a Conda channel.
+This builds the Conda package locally from the release source. The current
+build resolves to Python 3.12, so install it into a Python 3.12 environment.
+It does not install a prebuilt package from a Conda channel.
 
 > WSL users: if `conda build` fails with a syntax error, see [Installation](DOCS.md#1-installation).
 
